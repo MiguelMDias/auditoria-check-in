@@ -222,6 +222,17 @@ def find_summary(block_lines):
             }
     return None
 
+def find_usuario_baixa(block_lines):
+    """
+    O primeiro evento 'Baixado' encontrado no bloco e' o mais recente (o historico
+    vem em ordem reversa) - ou seja, e' quem de fato deu baixa no atendimento.
+    """
+    for line in block_lines:
+        m = re.match(r'^\s*Baixado\s+\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2}\s+(.+?)\s*$', line)
+        if m:
+            return m.group(1).strip()
+    return None
+
 def find_original_request_text(block_lines):
     """
     O texto original do pedido fica ENTRE a ultima linha 'Aberto DATA HORA SOLICITANTE'
@@ -319,6 +330,7 @@ def parse_atendimento_block(block_lines):
         'data': summary['data'],
         'status_final': summary['status_final'],
         'tipo_controle': summary['tipo_controle'],
+        'usuario_baixa': find_usuario_baixa(block_lines),
         'tem_pedido_cliente': len(pedidos) > 0,
         'pedidos_clientes': pedidos,
         'qtd_sub_rotas': len([s for s in sub_pedidos if s['origem']]),

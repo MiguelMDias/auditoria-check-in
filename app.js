@@ -58,71 +58,84 @@ function stackBar(counts, total){
   }).join('');
 }
 
+function codeChip(label, value){
+  if (!value) return '';
+  return `<span class="codechip" data-copy="${String(value).replace(/"/g,'&quot;')}">
+    <span class="k">${label}</span><span>${value}</span><i class="icon">⧉</i>
+  </span>`;
+}
+
 function rowDetailTransf(r){
   if (r.veredito === 'SEM_ATENDIMENTO'){
-    return `<dl>
-      <dt>transferência</dt><dd>${r.transferencia_codigo}</dd>
+    return `<div class="codechips">${codeChip('transferência', r.transferencia_codigo)}</div>
+    <dl>
       <dt>rota</dt><dd>${r.origem} &rarr; ${r.destino}</dd>
       <dt>motivo</dt><dd>${r.motivo}</dd>
       <dt>data</dt><dd>${r.data}</dd>
+      <dt>usuário</dt><dd>${r.transferencia_usuario || '—'}</dd>
     </dl><p class="obs">${r.detalhe}</p>`;
   }
   if (r.veredito === 'REVISAO'){
-    return `<dl>
-      <dt>controle</dt><dd>${r.controle}</dd>
+    return `<div class="codechips">${codeChip('atendimento', r.controle)}</div>
+    <dl>
       <dt>data</dt><dd>${r.data}</dd>
       <dt>status</dt><dd>${r.status_final}</dd>
+      <dt>usuário baixa</dt><dd>${r.usuario_baixa || '—'}</dd>
     </dl><p class="obs">${r.motivo_revisao}<br><br>"${(r.texto_original||'').replace(/\n/g,' / ')}"</p>`;
   }
   const rows = [
-    ['atendimento', r.atendimento_controle],
     ['data', r.atendimento_data],
     ['produto', r.produto],
     ['qtd. pedida', fmtQtd(r.quantidade_pedida)],
+    ['usuário baixa (atend.)', r.atendimento_usuario_baixa || '—'],
   ];
   if (r.pedido_cliente) rows.push(['pedido cliente', r.pedido_cliente]);
   if (r.transferencia_codigo){
-    rows.push(['transferência', r.transferencia_codigo]);
     rows.push(['qtd. executada', fmtQtd(r.quantidade_executada)]);
     rows.push(['motivo', r.transferencia_motivo]);
     rows.push(['status', r.transferencia_status]);
+    rows.push(['usuário transferência', r.transferencia_usuario || '—']);
   }
   if (r.veredito === 'AMBIGUO' && r.candidatos) rows.push(['candidatos', r.candidatos.join(', ')]);
-  return `<dl>${rows.map(([k,v]) => `<dt>${k}</dt><dd>${v ?? '—'}</dd>`).join('')}</dl>
+  return `<div class="codechips">${codeChip('atendimento', r.atendimento_controle)}${codeChip('transferência', r.transferencia_codigo)}</div>
+    <dl>${rows.map(([k,v]) => `<dt>${k}</dt><dd>${v ?? '—'}</dd>`).join('')}</dl>
     <p class="obs">${r.detalhe}</p>`;
 }
 
 function rowDetailUso(r){
   if (r.veredito === 'SEM_ATENDIMENTO'){
-    return `<dl>
-      <dt>correção</dt><dd>${r.correcao_codigo}</dd>
+    return `<div class="codechips">${codeChip('correção', r.correcao_codigo)}</div>
+    <dl>
       <dt>produto</dt><dd>${r.descricao || '—'}</dd>
       <dt>empresa</dt><dd>${r.empresa}</dd>
       <dt>data</dt><dd>${r.data}</dd>
+      <dt>usuário</dt><dd>${r.correcao_usuario || '—'}</dd>
     </dl><p class="obs">${r.detalhe}</p>`;
   }
   if (r.veredito === 'REVISAO'){
-    return `<dl>
-      <dt>controle</dt><dd>${r.controle}</dd>
+    return `<div class="codechips">${codeChip('atendimento', r.controle)}</div>
+    <dl>
       <dt>data</dt><dd>${r.data}</dd>
       <dt>status</dt><dd>${r.status_final}</dd>
+      <dt>usuário baixa</dt><dd>${r.usuario_baixa || '—'}</dd>
     </dl><p class="obs">${r.motivo_revisao}<br><br>"${(r.texto_original||'').replace(/\n/g,' / ')}"</p>`;
   }
   const rows = [
-    ['atendimento', r.atendimento_controle],
     ['data', r.atendimento_data],
     ['produto/descrição pedido', r.produto],
     ['qtd. pedida', fmtQtd(r.quantidade_pedida)],
+    ['usuário baixa (atend.)', r.atendimento_usuario_baixa || '—'],
   ];
   if (r.correcao_codigo){
-    rows.push(['correção', r.correcao_codigo]);
     rows.push(['descrição no estoque', r.correcao_descricao]);
     rows.push(['empresa', r.correcao_empresa]);
     rows.push(['qtd. executada', fmtQtd(r.quantidade_executada)]);
+    rows.push(['usuário correção', r.correcao_usuario || '—']);
     rows.push(['casado por', r.casado_por]);
   }
   if (r.veredito === 'AMBIGUO' && r.candidatos) rows.push(['candidatos', r.candidatos.join(', ')]);
-  return `<dl>${rows.map(([k,v]) => `<dt>${k}</dt><dd>${v ?? '—'}</dd>`).join('')}</dl>
+  return `<div class="codechips">${codeChip('atendimento', r.atendimento_controle)}${codeChip('correção', r.correcao_codigo)}</div>
+    <dl>${rows.map(([k,v]) => `<dt>${k}</dt><dd>${v ?? '—'}</dd>`).join('')}</dl>
     <p class="obs">${r.detalhe}</p>`;
 }
 
@@ -216,7 +229,10 @@ function buildReport(containerId, title, dataBlock, kind){
       </div>
     `).join('');
     list.querySelectorAll('.row').forEach(el => {
-      el.addEventListener('click', () => el.classList.toggle('expanded'));
+      el.addEventListener('click', e => {
+        if (e.target.closest('.codechip')) return;
+        el.classList.toggle('expanded');
+      });
     });
   }
 
@@ -240,3 +256,30 @@ buildMeta();
 buildTally();
 buildReport('report-transferencias', 'Transferências', AUDIT_DATA.transferencias, 'transf');
 buildReport('report-uso', 'Uso e consumo', AUDIT_DATA.uso_consumo, 'uso');
+
+function copyToClipboard(text){
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+}
+
+document.addEventListener('click', e => {
+  const chip = e.target.closest('.codechip');
+  if (!chip) return;
+  e.stopPropagation();
+  copyToClipboard(chip.dataset.copy);
+  chip.classList.add('copied');
+  setTimeout(() => chip.classList.remove('copied'), 900);
+});

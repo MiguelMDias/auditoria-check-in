@@ -97,6 +97,7 @@ def match_transferencias(atendimentos, transferencias):
                 registro = {
                     'atendimento_controle': at['controle'],
                     'atendimento_data': at['data'],
+                    'atendimento_usuario_baixa': at.get('usuario_baixa'),
                     'origem': sub['origem'], 'destino': sub['destino'],
                     'produto': prod['codigo'], 'quantidade_pedida': prod['quantidade'],
                     'pedido_cliente': sub['pedido_cliente'],
@@ -130,6 +131,7 @@ def match_transferencias(atendimentos, transferencias):
                 registro['transferencia_codigo'] = t['codigo']
                 registro['transferencia_motivo'] = t['motivo']
                 registro['transferencia_status'] = t['status']
+                registro['transferencia_usuario'] = t.get('usuario_insercao')
                 registro['quantidade_executada'] = it['quantidade']
 
                 problemas = []
@@ -161,6 +163,7 @@ def match_transferencias(atendimentos, transferencias):
                     'quantidade': it['quantidade'],
                     'origem': t['empresa_origem'], 'destino': t['empresa_destino'],
                     'motivo': t['motivo'], 'data': t['data_cadastro'],
+                    'transferencia_usuario': t.get('usuario_insercao'),
                     'veredito': 'SEM_ATENDIMENTO',
                     'detalhe': 'transferência executada no sistema sem atendimento de solicitação correspondente encontrado',
                 })
@@ -225,6 +228,7 @@ def match_uso_consumo(atendimentos, correcoes):
 
                 registro = {
                     'atendimento_controle': at['controle'], 'atendimento_data': at['data'],
+                    'atendimento_usuario_baixa': at.get('usuario_baixa'),
                     'produto': prod['codigo'] or (prod.get('nome') or '(sem identificação)'),
                     'quantidade_pedida': prod['quantidade'],
                     'metodo_extracao': prod.get('metodo', 'codigo>qtd'),
@@ -254,6 +258,7 @@ def match_uso_consumo(atendimentos, correcoes):
                 registro['correcao_empresa'] = cor['empresa']
                 registro['correcao_descricao'] = it['descricao']
                 registro['quantidade_executada'] = it['quantidade']
+                registro['correcao_usuario'] = cor.get('usuario_retirou') or cor.get('usuario_insercao')
                 registro['casado_por'] = 'nome (sem código no pedido)' if usa_nome else 'código'
                 if not c['qtd_ok']:
                     registro['veredito'] = 'DIVERGENTE'
@@ -273,6 +278,7 @@ def match_uso_consumo(atendimentos, correcoes):
                     'correcao_codigo': c['codigo'], 'produto': it['produto'],
                     'descricao': it['descricao'],
                     'quantidade': it['quantidade'], 'empresa': c['empresa'], 'data': c['data'],
+                    'correcao_usuario': c.get('usuario_retirou') or c.get('usuario_insercao'),
                     'veredito': 'SEM_ATENDIMENTO',
                     'detalhe': 'saída de uso/consumo lançada no sistema sem atendimento de solicitação correspondente',
                 })
