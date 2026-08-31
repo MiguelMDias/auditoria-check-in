@@ -61,6 +61,104 @@ PRODUCT_LINE_RE = re.compile(
 def norm_code(s):
     return s.replace('.', '')
 
+# ---------------------------------------------------------------- FALLBACK (2o padrao)
+# Cobre pedidos de uniforme/EPI/material de escritorio, que seguem uma gramatica
+# diferente da transferencia normal: quantidade PRIMEIRO, nome do produto por
+# extenso, codigo (quando existe) no FINAL da linha - as vezes sem codigo nenhum.
+# So roda quando o padrao principal (PRODUCT_LINE_RE) nao achou nada no segmento,
+# pra nao arriscar falso positivo em texto que ja foi bem interpretado.
+
+NOISE_LINES = re.compile(
+    r'^(BOM DIA|BOA TARDE|BOA NOITE|OBRIGAD[AO]|GRATO|GRATA|ATT\.?!?|ATENCIOSAMENTE|'
+    r'OBS\.?:?.*|OBSERVA[ÇC][AÃ]O:?.*|SOLICITO A RETIRADA.*|POR FAVOR.*)$',
+    re.IGNORECASE
+)
+
+# "02 Camiseta vermelha masculina tamanho"G"" ou "01 Botina Ocupacional tamanho"41" 122.164"
+QTY_FIRST_RE = re.compile(
+    r'^\s*(\d{1,2})\s+'                                     # quantidade (1-2 digitos, sempre no comeco da linha)
+    r'([A-Za-zÀ-Ÿà-ÿ][A-Za-zÀ-Ÿà-ÿ0-9"\'\s]{2,55}?)'          # nome do produto por extenso
+    r'(?:\s+(\d{1,3}(?:\.\d{3})+|\d{4,8}))?'                # codigo opcional no final
+    r'\s*$'
+)
+
+# "115.598 = luva preta = 01"
+CODE_EQ_NAME_EQ_QTY_RE = re.compile(
+    r'(\d{1,3}(?:\.\d{3})+|\d{4,8})\s*=\s*([^=\n]{2,55}?)\s*=\s*(\d+(?:[.,]\d+)?)'
+)
+
+# "147 > 1 unidade" - mesmo padrao do principal mas aceitando codigo curto (2-3 digitos)
+# quando o separador ">" deixa claro que e' um par codigo/quantidade
+SHORT_CODE_RE = re.compile(
+    r'^\s*(\d{2,3})\s*>\s*(\d+(?:[.,]\d+)?)\s*(UND\.?|UNIDADES?|UN\.?)?\s*$',
+    re.IGNORECASE
+)
+
+# "...FITILHO 3 UNIDADES" / "...04 CANETAS AZUL" - nome + quantidade + unidade no
+# final da frase (as vezes com a unidade omitida, ex: "ENVIAR 04 CANETAS AZUL")
+TRAILING_QTY_RE = re.compile(
+    r'([A-ZÀ-Úa-zà-ú][A-Za-zÀ-Ÿà-ÿ]*(?:\s+[A-ZÀ-Úa-zà-ú][A-Za-zÀ-Ÿà-ÿ]*){0,2})'
+    r'\s+(\d{1,3}(?:[.,]\d+)?)\s+(UNIDADES?|UND\.?|UN\.?)\b',
+    re.IGNORECASE
+)
+LEADING_QTY_NAME_RE = re.compile(
+    r'\b(\d{1,2})\s+([A-ZÀ-Ú]{3,}(?:\s+[A-ZÀ-Ú]{2,}){0,2})\s*$'
+)
+
+def extract_products_fallback(text):
+    produtos = []
+    achados_qtd_pos = set()
+
+    for linha in text.split('\n'):
+        linha = linha.strip()
+        if not linha or NOISE_LINES.match(linha):
+            continue
+
+        m = CODE_EQ_NAME_EQ_QTY_RE.search(linha)
+        if m:
+            codigo, nome, qtd = m.groups()
+            produtos.append({'codigo': norm_code(codigo), 'nome': nome.strip(),
+                              'quantidade': qtd.replace(',', '.'), 'unidade': None,
+                              'metodo': 'codigo=nome=qtd'})
+            continue
+
+        m = QTY_FIRST_RE.match(linha)
+        if m:
+            qtd, nome, codigo = m.groups()
+            produtos.append({'codigo': norm_code(codigo) if codigo else None,
+                              'nome': nome.strip(), 'quantidade': qtd.replace(',', '.'),
+                              'unidade': None, 'metodo': 'qtd_primeiro'})
+            continue
+
+        m = SHORT_CODE_RE.match(linha)
+        if m:
+            codigo, qtd, und = m.groups()
+            produtos.append({'codigo': norm_code(codigo), 'nome': None,
+                              'quantidade': qtd.replace(',', '.'),
+                              'unidade': (und or '').upper() or None,
+                              'metodo': 'codigo_curto'})
+            continue
+
+    if not produtos:
+        # ultimo recurso: procura "NOME ... QTD UNIDADE" em qualquer lugar do texto
+        # (cobre "SOLICITO A SAIDA DE USO E CONSUMO FITILHO 3 UNIDADES")
+        for m in TRAILING_QTY_RE.finditer(text):
+            nome, qtd, und = m.groups()
+            nome = nome.strip()
+            if NOISE_LINES.match(nome) or len(nome) < 3:
+                continue
+            produtos.append({'codigo': None, 'nome': nome, 'quantidade': qtd.replace(',', '.'),
+                              'unidade': und.upper(), 'metodo': 'nome+qtd_final'})
+        if not produtos:
+            # ultimo-ultimo recurso: "FAVOR NOS ENVIAR 04 CANETAS AZUL" (sem unidade)
+            for m in LEADING_QTY_NAME_RE.finditer(text):
+                qtd, nome = m.groups()
+                if NOISE_LINES.match(nome):
+                    continue
+                produtos.append({'codigo': None, 'nome': nome.strip().title(),
+                                  'quantidade': qtd, 'unidade': None, 'metodo': 'qtd+nome_maiusculo'})
+    return produtos
+
 FURNITURE_EXACT = {
     'Status','Baixado','Homologado','Homologação cancelada','Em homologação',
     'Atendido','Pausado','Em atendimento','Aguardando requisição','Aberto',
@@ -185,9 +283,13 @@ def extract_products(text):
         codigo, qtd, und = m.groups()
         produtos.append({
             'codigo': norm_code(codigo),
+            'nome': None,
             'quantidade': qtd.replace(',', '.'),
             'unidade': (und or '').upper() or None,
+            'metodo': 'codigo>qtd',
         })
+    if not produtos:
+        produtos = extract_products_fallback(text_sem_pedido)
     return produtos
 
 def parse_atendimento_block(block_lines):

@@ -10,6 +10,45 @@ Correcao (execucao). Gera o veredito final de cada atendimento auditavel:
   NAO_ENCONTRADO -> nenhuma execucao correspondente
 """
 import json
+import re
+import unicodedata
+
+STOPWORDS = {
+    'de','da','do','das','dos','para','com','sem','tamanho','cor','uso','consumo',
+    'e','o','a','os','as','um','uma','n','no','na',
+}
+
+# palavras genericas demais pra sozinhas confirmarem que dois produtos sao o mesmo
+# (cor sozinha nao prova nada: "agasalho azul" e "luva azul" nao sao o mesmo item)
+TOKENS_GENERICOS = {
+    'azul','vermelho','vermelha','preto','preta','branco','branca','verde','amarelo',
+    'amarela','cinza','rosa','laranja','marrom','roxo','grande','pequeno','medio',
+    'novo','nova','tam','xg','gg','g','m','p','pp',
+}
+
+def normaliza_texto(s):
+    """minusculas, sem acento, sem pontuacao - pra comparar nomes de produto"""
+    if not s:
+        return []
+    s = unicodedata.normalize('NFKD', str(s)).encode('ascii', 'ignore').decode('ascii')
+    s = re.sub(r'["\'\(\)]', ' ', s.lower())
+    tokens = re.findall(r'[a-z0-9]+', s)
+    tokens = [t[:-1] if t.endswith('s') and len(t) > 4 and not t.isdigit() else t for t in tokens]  # plural simples
+    return [t for t in tokens if t not in STOPWORDS and len(t) > 1]
+
+def score_nome(nome_pedido, descricao_execucao):
+    """
+    Conta tokens em comum entre o nome do pedido e a descricao do item executado.
+    Um match sustentado APENAS por palavras genericas (cor, tamanho...) nao conta -
+    senao "agasalho azul" bateria com "luva azul" so pela cor. Precisa de pelo menos
+    1 palavra especifica em comum (ex: o nome do produto em si).
+    """
+    t1, t2 = set(normaliza_texto(nome_pedido)), set(normaliza_texto(descricao_execucao))
+    overlap = t1 & t2
+    especificos = overlap - TOKENS_GENERICOS
+    if not especificos:
+        return 0
+    return len(overlap)
 
 def norm_produto(p):
     return str(p).replace('.', '').lstrip('0') or '0'
@@ -129,35 +168,72 @@ def match_transferencias(atendimentos, transferencias):
 
 
 def match_uso_consumo(atendimentos, correcoes):
-    """Mesma logica, mas para atendimentos tipo USO E CONSUMO x correcoes de estoque tipo 'Uso e consumo'."""
-    idx = {}
+    """
+    Mesma logica de match_transferencias, mas para atendimentos tipo USO E CONSUMO x
+    correcoes de estoque tipo 'Uso e consumo'. Produtos com codigo casam por indice
+    (rapido e exato); produtos sem codigo (pedidos de uniforme/EPI em texto livre,
+    ex: "02 Camiseta vermelha tamanho G") casam pelo NOME, comparando contra a
+    descricao do item na correcao de estoque (normalizando acento/maiuscula/plural).
+    """
     usos = [c for c in correcoes if c['tipo_correcao'] == 'Uso e consumo']
+
+    idx_codigo = {}
+    lista_itens = []  # (correcao, item) - usado na busca por nome
     for c in usos:
         for it in c['itens']:
-            idx.setdefault(norm_produto(it['produto']), []).append((c, it))
+            idx_codigo.setdefault(norm_produto(it['produto']), []).append((c, it))
+            lista_itens.append((c, it))
 
     usados = set()
     resultado = []
+
+    def candidatos_por_codigo(prod):
+        p = norm_produto(prod['codigo'])
+        out = []
+        for c, it in idx_codigo.get(p, []):
+            chave = (c['codigo'], p)
+            if chave in usados:
+                continue
+            out.append({'correcao': c, 'item': it, 'qtd_ok': qtd_bate(prod['quantidade'], it['quantidade']),
+                        'chave': chave, 'metodo': 'codigo'})
+        return out
+
+    def candidatos_por_nome(prod):
+        melhores, melhor_score = [], 0
+        for c, it in lista_itens:
+            chave = (c['codigo'], 'nome:' + norm_produto(it['produto']))
+            if chave in usados:
+                continue
+            score = score_nome(prod.get('nome'), it['descricao'])
+            if score == 0:
+                continue
+            if score > melhor_score:
+                melhores, melhor_score = [{'correcao': c, 'item': it,
+                                            'qtd_ok': qtd_bate(prod['quantidade'], it['quantidade']),
+                                            'chave': chave, 'metodo': 'nome', 'score': score}], score
+            elif score == melhor_score:
+                melhores.append({'correcao': c, 'item': it,
+                                  'qtd_ok': qtd_bate(prod['quantidade'], it['quantidade']),
+                                  'chave': chave, 'metodo': 'nome', 'score': score})
+        return melhores
+
     for at in atendimentos:
         for sub in at['sub_pedidos']:
             for prod in sub['produtos']:
-                p = norm_produto(prod['codigo'])
-                candidatos_brutos = idx.get(p, [])
-                candidatos = []
-                for c, it in candidatos_brutos:
-                    chave = (c['codigo'], p)
-                    if chave in usados:
-                        continue
-                    qtd_ok = qtd_bate(prod['quantidade'], it['quantidade'])
-                    candidatos.append({'correcao': c, 'item': it, 'qtd_ok': qtd_ok})
+                usa_nome = not prod.get('codigo')
+                candidatos = candidatos_por_nome(prod) if usa_nome else candidatos_por_codigo(prod)
 
                 registro = {
                     'atendimento_controle': at['controle'], 'atendimento_data': at['data'],
-                    'produto': prod['codigo'], 'quantidade_pedida': prod['quantidade'],
+                    'produto': prod['codigo'] or (prod.get('nome') or '(sem identificação)'),
+                    'quantidade_pedida': prod['quantidade'],
+                    'metodo_extracao': prod.get('metodo', 'codigo>qtd'),
                 }
                 if not candidatos:
                     registro['veredito'] = 'NAO_ENCONTRADO'
-                    registro['detalhe'] = 'nenhuma saída de uso/consumo encontrada com este produto'
+                    registro['detalhe'] = ('nenhuma saída de uso/consumo com produto/descrição correspondente'
+                                            if not usa_nome else
+                                            'nenhuma saída de uso/consumo com descrição parecida com "%s"' % prod.get('nome'))
                     resultado.append(registro)
                     continue
 
@@ -165,32 +241,37 @@ def match_uso_consumo(atendimentos, correcoes):
                 escolhidos = exatos if exatos else candidatos
                 if len(escolhidos) > 1:
                     registro['veredito'] = 'AMBIGUO'
-                    registro['detalhe'] = f'{len(escolhidos)} correções candidatas para o mesmo produto'
+                    registro['detalhe'] = f'{len(escolhidos)} correções candidatas para o mesmo produto' + \
+                        (' (casado por nome, confira manualmente)' if usa_nome else '')
                     registro['candidatos'] = [c['correcao']['codigo'] for c in escolhidos[:5]]
                     resultado.append(registro)
                     continue
 
                 c = escolhidos[0]
                 cor, it = c['correcao'], c['item']
-                usados.add((cor['codigo'], p))
+                usados.add(c['chave'])
                 registro['correcao_codigo'] = cor['codigo']
                 registro['correcao_empresa'] = cor['empresa']
+                registro['correcao_descricao'] = it['descricao']
                 registro['quantidade_executada'] = it['quantidade']
+                registro['casado_por'] = 'nome (sem código no pedido)' if usa_nome else 'código'
                 if not c['qtd_ok']:
                     registro['veredito'] = 'DIVERGENTE'
                     registro['detalhe'] = f"quantidade diverge (pedido: {prod['quantidade']}, executado: {it['quantidade']})"
                 else:
                     registro['veredito'] = 'BATIDO'
-                    registro['detalhe'] = 'produto e quantidade conferem'
+                    registro['detalhe'] = 'produto e quantidade conferem' + (' (casado por nome)' if usa_nome else '')
                 resultado.append(registro)
 
     orfas = []
     for c in usos:
         for it in c['itens']:
-            chave = (c['codigo'], norm_produto(it['produto']))
-            if chave not in usados:
+            chave_cod = (c['codigo'], norm_produto(it['produto']))
+            chave_nome = (c['codigo'], 'nome:' + norm_produto(it['produto']))
+            if chave_cod not in usados and chave_nome not in usados:
                 orfas.append({
                     'correcao_codigo': c['codigo'], 'produto': it['produto'],
+                    'descricao': it['descricao'],
                     'quantidade': it['quantidade'], 'empresa': c['empresa'], 'data': c['data'],
                     'veredito': 'SEM_ATENDIMENTO',
                     'detalhe': 'saída de uso/consumo lançada no sistema sem atendimento de solicitação correspondente',

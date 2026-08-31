@@ -96,6 +96,7 @@ function rowDetailUso(r){
   if (r.veredito === 'SEM_ATENDIMENTO'){
     return `<dl>
       <dt>correção</dt><dd>${r.correcao_codigo}</dd>
+      <dt>produto</dt><dd>${r.descricao || '—'}</dd>
       <dt>empresa</dt><dd>${r.empresa}</dd>
       <dt>data</dt><dd>${r.data}</dd>
     </dl><p class="obs">${r.detalhe}</p>`;
@@ -110,13 +111,15 @@ function rowDetailUso(r){
   const rows = [
     ['atendimento', r.atendimento_controle],
     ['data', r.atendimento_data],
-    ['produto', r.produto],
+    ['produto/descrição pedido', r.produto],
     ['qtd. pedida', fmtQtd(r.quantidade_pedida)],
   ];
   if (r.correcao_codigo){
     rows.push(['correção', r.correcao_codigo]);
+    rows.push(['descrição no estoque', r.correcao_descricao]);
     rows.push(['empresa', r.correcao_empresa]);
     rows.push(['qtd. executada', fmtQtd(r.quantidade_executada)]);
+    rows.push(['casado por', r.casado_por]);
   }
   if (r.veredito === 'AMBIGUO' && r.candidatos) rows.push(['candidatos', r.candidatos.join(', ')]);
   return `<dl>${rows.map(([k,v]) => `<dt>${k}</dt><dd>${v ?? '—'}</dd>`).join('')}</dl>
@@ -144,10 +147,13 @@ function rowHead(r, kind){
   }
   const route = kind === 'transf' && (r.origem || r.destino)
     ? `<span class="row-route">${r.origem||'?'}<span class="arrow">&rarr;</span>${r.destino||'?'}</span>` : '';
+  const porNome = kind === 'uso' && r.casado_por && r.casado_por.startsWith('nome')
+    ? `<span class="row-badge rev" style="margin-left:-.3rem">por nome</span>` : '';
   return `<div class="row-top">
     <span class="row-code">${r.atendimento_controle}</span>
     ${route}
     <span class="row-prod">produto ${r.produto} · qtd ${fmtQtd(r.quantidade_pedida)}</span>
+    ${porNome}
     <span class="row-badge ${meta.css}">${meta.label}</span>
   </div>`;
 }
