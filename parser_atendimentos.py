@@ -38,7 +38,71 @@ ROUTE_PATTERNS = [
 ]
 ROUTE_RES = [re.compile(p, re.IGNORECASE) for p in ROUTE_PATTERNS]
 
-KNOWN_EMPRESAS = {"CFS","CFVP","CFR","CFC","CFW3","CFT","CFG","CFJB","CFPA","CFBS"}
+KNOWN_EMPRESAS = {"CFS","CFVP","CFR","CFC","CFW3","CFT","CFG","CFJB","CFPA","CFBS","CAP99"}
+
+# apelidos por extenso das lojas (o solicitante as vezes escreve o nome da cidade
+# em vez do codigo da empresa) - acento/maiuscula sao normalizados antes de comparar
+ALIASES_LOJA = {
+    "CFS":   ["CFS", "SAMAMBAIA"],
+    "CFR":   ["CFR", "RECANTO"],
+    "CFVP":  ["CFVP", "VICENTE PIRES", "VICENTE"],
+    "CFC":   ["CFC", "CEILANDIA"],
+    "CFW3":  ["CFW3", "ASA NORTE", "W3"],
+    "CFT":   ["CFT", "TAGUATINGA"],
+    "CFG":   ["CFG", "GAMA"],
+    "CFJB":  ["CFJB", "JARDIM BOTANICO"],
+    "CFPA":  ["CFPA", "PONTE ALTA"],
+    "CFBS":  ["CFBS", "BERNARDO SAYAO", "BERNADO SAYAO"],
+    "CAP99": ["CAP99", "CAPITAL ATACADISTA", "CAPITAL"],
+}
+
+_ACCENT_TABLE = str.maketrans(
+    'áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ',
+    'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC'
+)
+
+def sem_acento_maiuscula(s):
+    """remove acentos (1-por-1, preserva o tamanho da string) e poe em maiusculas"""
+    return s.translate(_ACCENT_TABLE).upper()
+
+# mapa reverso: alias normalizado (sem acento/maiuscula) -> codigo da empresa
+_ALIAS_PARA_CODIGO = {}
+for _codigo, _nomes in ALIASES_LOJA.items():
+    for _nome in _nomes:
+        _ALIAS_PARA_CODIGO[sem_acento_maiuscula(_nome)] = _codigo
+
+def resolve_empresa(texto):
+    """aceita tanto o codigo (CFS) quanto o nome da cidade (Samambaia/Ceilândia...)"""
+    if not texto:
+        return None
+    return _ALIAS_PARA_CODIGO.get(sem_acento_maiuscula(texto.strip()))
+
+# alternativa regex com todos os apelidos conhecidos, do mais longo pro mais curto
+# (pra "JARDIM BOTANICO" nao ser cortado por um alias mais curto que apareca antes)
+_TODOS_ALIASES = sorted(_ALIAS_PARA_CODIGO.keys(), key=len, reverse=True)
+_PLACE_ALT = '|'.join(re.escape(a).replace(r'\ ', r'\s+') for a in _TODOS_ALIASES)
+PLACE_RE_TXT = r'(?:' + _PLACE_ALT + r')'
+
+# marcadores de rota origem->destino (varias variacoes encontradas no texto real),
+# agora aceitando tanto o codigo da empresa quanto o nome da cidade por extenso
+ROUTE_PATTERNS = [
+    r'\bDA\s+(?P<origem>' + PLACE_RE_TXT + r')\s+PARA\s+(?:O\s+|A\s+)?(?P<destino>' + PLACE_RE_TXT + r')\b',
+    r'\b(?P<origem>' + PLACE_RE_TXT + r')\s*[>\-]{1,2}\s*(?P<destino>' + PLACE_RE_TXT + r')\b',
+    r'\b(?P<origem>' + PLACE_RE_TXT + r')\s+P/\s*(?P<destino>' + PLACE_RE_TXT + r')\b',
+    r'\b(?P<origem>' + PLACE_RE_TXT + r')\s+PARA\s+(?P<destino>' + PLACE_RE_TXT + r')\b',
+    r'\bLOJA\s+(?P<origem>' + PLACE_RE_TXT + r')\s+DESTINO\s+(?P<destino>' + PLACE_RE_TXT + r')\b',
+    r'\bDE:\s*(?P<origem>' + PLACE_RE_TXT + r')\b.*?\bPARA:\s*(?P<destino>' + PLACE_RE_TXT + r')\b',
+]
+ROUTE_RES = [re.compile(p, re.IGNORECASE) for p in ROUTE_PATTERNS]
+
+# marcadores que so citam a ORIGEM (o destino fica implicito - normalmente a
+# propria loja de quem esta' atendendo o pedido). Ex: "TRAZER DA LOJA DE TAGUATINGA",
+# "DA LOJA DA CEILANDIA", "VEM DA LOJA GAMA"
+ORIGIN_ONLY_PATTERNS = [
+    r'\bDA\s+LOJA\s+(?:DE\s+|DA\s+|DO\s+)?(?P<origem>' + PLACE_RE_TXT + r')\b',
+    r'\bDA\s+LOJA\s+(?P<origem>' + PLACE_RE_TXT + r')\b',
+]
+ORIGIN_ONLY_RES = [re.compile(p, re.IGNORECASE) for p in ORIGIN_ONLY_PATTERNS]
 
 PEDIDO_RE = re.compile(r'PEDIDO[:\s]*([0-9]{6,})', re.IGNORECASE)
 
@@ -251,36 +315,54 @@ def find_original_request_text(block_lines):
 def extract_pedidos_numbers(text):
     return PEDIDO_RE.findall(text)
 
+def _dedup_overlaps(matches):
+    """recebe lista de (start, end, ...) ja ordenada e remove sobreposicoes"""
+    dedup = []
+    for m in matches:
+        if dedup and m[0] < dedup[-1][1]:
+            continue
+        dedup.append(m)
+    return dedup
+
 def extract_route_segments(text):
     """
     Divide o texto em segmentos por marcador de rota. Retorna lista de dicts:
     {origem, destino, texto_produtos}
     Se nao achar nenhuma rota, retorna 1 segmento sem origem/destino (rota indefinida).
+
+    Roda o casamento numa versao do texto sem acento/maiuscula (mesmo tamanho da
+    original, char a char) pra aceitar "Ceilândia"/"CEILANDIA"/"ceilandia" igual,
+    mas fatiar o texto ORIGINAL nas mesmas posicoes (os indices batem 1-a-1).
+
+    O rotulo de rota (completa "DA X PARA Y" ou so' origem "DA LOJA DE X") sempre
+    vale pro texto que vem DEPOIS dele, ate' o proximo rotulo - e' como as pessoas
+    escrevem na pratica: primeiro dizem de onde/pra onde, depois listam os itens.
     """
+    texto_norm = sem_acento_maiuscula(text)
+
     matches = []
     for rx in ROUTE_RES:
-        for m in rx.finditer(text):
-            o, d = m.group('origem').upper(), m.group('destino').upper()
-            if o in KNOWN_EMPRESAS and d in KNOWN_EMPRESAS:
+        for m in rx.finditer(texto_norm):
+            o, d = resolve_empresa(m.group('origem')), resolve_empresa(m.group('destino'))
+            if o and d:
                 matches.append((m.start(), m.end(), o, d))
-    matches.sort(key=lambda x: x[0])
-    # dedup por posicao proxima (regex sobrepostas)
-    dedup = []
-    for m in matches:
-        if dedup and m[0] - dedup[-1][1] < 3:
-            continue
-        dedup.append(m)
+    for rx in ORIGIN_ONLY_RES:
+        for m in rx.finditer(texto_norm):
+            o = resolve_empresa(m.group('origem'))
+            if o:
+                matches.append((m.start(), m.end(), o, None))
+    matches.sort(key=lambda x: (x[0], -(x[1] - x[0])))
+    matches = _dedup_overlaps(matches)
 
-    if not dedup:
+    if not matches:
         return [{'origem': None, 'destino': None, 'texto': text}]
 
     segments = []
-    for i, (start, end, o, d) in enumerate(dedup):
+    for i, (start, end, o, d) in enumerate(matches):
         seg_start = end
-        seg_end = dedup[i+1][0] if i+1 < len(dedup) else len(text)
+        seg_end = matches[i+1][0] if i+1 < len(matches) else len(text)
         segments.append({'origem': o, 'destino': d, 'texto': text[seg_start:seg_end].strip()})
-    # texto antes da primeira rota (pode conter produtos que pertencem a ela, dependendo do padrao)
-    pre_text = text[:dedup[0][0]].strip()
+    pre_text = text[:matches[0][0]].strip()
     if pre_text:
         segments[0]['texto'] = pre_text + '\n' + segments[0]['texto']
     return segments
