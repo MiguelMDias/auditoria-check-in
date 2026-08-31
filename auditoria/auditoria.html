@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auditoria de Transferências &amp; Uso/Consumo — Castelo Forte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink-0:#0D1117;
+  --ink-1:#151B23;
+  --ink-2:#1C242F;
+  --ink-3:#26303D;
+  --hairline:#2C3644;
+  --hairline-strong:#3A4656;
+  --paper:#E9ECEE;
+  --paper-dim:#9FACBC;
+  --paper-mute:#6B7688;
+
+  --ok:#4FB99A;
+  --ok-dim:#1E3A34;
+  --warn:#E0AC4C;
+  --warn-dim:#3D3220;
+  --amb:#9591D6;
+  --amb-dim:#2A2842;
+  --bad:#DC6B52;
+  --bad-dim:#3B241F;
+  --orfa:#C97C93;
+  --orfa-dim:#372430;
+  --rev:#7C8CA8;
+  --rev-dim:#232C3A;
+
+  --font-ui: 'Space Grotesk', sans-serif;
+  --font-data: 'IBM Plex Mono', monospace;
+}
+
+*{box-sizing:border-box; margin:0; padding:0;}
+
+html,body{
+  background:var(--ink-0);
+  color:var(--paper);
+  font-family:var(--font-ui);
+  font-size:15px;
+  line-height:1.5;
+}
+
+body{padding:0 0 6rem;}
+
+.wrap{max-width:1180px; margin:0 auto; padding:0 2rem;}
+
+/* ============ MASTHEAD ============ */
+.masthead{
+  border-bottom:1px solid var(--hairline);
+  padding:2.75rem 0 2rem;
+}
+.masthead .kicker{
+  font-family:var(--font-data);
+  font-size:12px;
+  letter-spacing:.04em;
+  color:var(--paper-mute);
+  margin-bottom:.9rem;
+}
+.masthead h1{
+  font-size:clamp(28px,4vw,40px);
+  font-weight:600;
+  letter-spacing:-.01em;
+  max-width:14ch;
+}
+.masthead .sub{
+  margin-top:.9rem;
+  color:var(--paper-dim);
+  font-size:14.5px;
+  max-width:56ch;
+}
+.masthead .meta{
+  margin-top:1.6rem;
+  display:flex;
+  gap:2.2rem;
+  flex-wrap:wrap;
+  font-family:var(--font-data);
+  font-size:12.5px;
+  color:var(--paper-mute);
+}
+.masthead .meta b{color:var(--paper-dim); font-weight:500;}
+
+/* ============ TALLY (KPI strip) ============ */
+.tally{
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  border-bottom:1px solid var(--hairline);
+}
+.tally .cell{
+  padding:1.5rem 1.4rem;
+  border-left:1px solid var(--hairline);
+}
+.tally .cell:first-child{border-left:none;}
+.tally .num{
+  font-family:var(--font-data);
+  font-size:clamp(22px,2.4vw,30px);
+  font-weight:600;
+  line-height:1;
+}
+.tally .lbl{
+  margin-top:.6rem;
+  font-size:12px;
+  color:var(--paper-mute);
+  line-height:1.35;
+}
+.tally .cell.ok .num{color:var(--ok);}
+.tally .cell.warn .num{color:var(--warn);}
+.tally .cell.amb .num{color:var(--amb);}
+.tally .cell.bad .num{color:var(--bad);}
+.tally .cell.orfa .num{color:var(--orfa);}
+.tally .cell.rev .num{color:var(--rev);}
+
+/* ============ SECTION ============ */
+.report{padding:3.4rem 0 0;}
+.report-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:1rem;
+  flex-wrap:wrap;
+  margin-bottom:1.3rem;
+}
+.report-head h2{
+  font-size:21px;
+  font-weight:600;
+}
+.report-head .count{
+  font-family:var(--font-data);
+  font-size:13px;
+  color:var(--paper-mute);
+}
+
+/* stacked veredict bar */
+.stackbar{
+  display:flex;
+  height:10px;
+  border-radius:0;
+  overflow:hidden;
+  margin-bottom:1.6rem;
+  background:var(--ink-2);
+}
+.stackbar span{height:100%;}
+
+/* filter chips */
+.chiprow{
+  display:flex;
+  gap:.5rem;
+  flex-wrap:wrap;
+  margin-bottom:1.4rem;
+}
+.chip{
+  font-family:var(--font-data);
+  font-size:12.5px;
+  padding:.5rem .85rem;
+  border:1px solid var(--hairline);
+  background:var(--ink-1);
+  color:var(--paper-dim);
+  cursor:pointer;
+  user-select:none;
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+  transition:border-color .12s ease, color .12s ease;
+}
+.chip:hover{border-color:var(--hairline-strong);}
+.chip .dot{width:7px; height:7px; flex:none;}
+.chip.active{color:var(--paper); border-color:var(--hairline-strong); background:var(--ink-2);}
+
+.searchbox{
+  margin-bottom:1.6rem;
+}
+.searchbox input{
+  width:100%;
+  max-width:340px;
+  background:var(--ink-1);
+  border:1px solid var(--hairline);
+  color:var(--paper);
+  font-family:var(--font-data);
+  font-size:13px;
+  padding:.65rem .9rem;
+  outline:none;
+}
+.searchbox input:focus{border-color:var(--hairline-strong);}
+.searchbox input::placeholder{color:var(--paper-mute);}
+
+/* ledger rows */
+.ledger{border-top:1px solid var(--hairline);}
+.row{
+  border-bottom:1px solid var(--hairline);
+  border-left:3px solid transparent;
+  padding:.85rem 1rem .85rem 1.1rem;
+  cursor:pointer;
+}
+.row:hover{background:var(--ink-1);}
+.row.ok{border-left-color:var(--ok);}
+.row.warn{border-left-color:var(--warn);}
+.row.amb{border-left-color:var(--amb);}
+.row.bad{border-left-color:var(--bad);}
+.row.orfa{border-left-color:var(--orfa);}
+.row.rev{border-left-color:var(--rev);}
+
+.row-top{
+  display:flex;
+  align-items:center;
+  gap:1rem;
+  flex-wrap:wrap;
+}
+.row-code{
+  font-family:var(--font-data);
+  font-size:13px;
+  color:var(--paper-dim);
+  min-width:64px;
+}
+.row-route{
+  font-family:var(--font-data);
+  font-size:13px;
+  color:var(--paper);
+}
+.row-route .arrow{color:var(--paper-mute); margin:0 .35rem;}
+.row-prod{
+  font-size:13px;
+  color:var(--paper-dim);
+  flex:1;
+  min-width:160px;
+}
+.row-badge{
+  font-family:var(--font-data);
+  font-size:11px;
+  letter-spacing:.03em;
+  padding:.22rem .55rem;
+  flex:none;
+}
+.row-badge.ok{background:var(--ok-dim); color:var(--ok);}
+.row-badge.warn{background:var(--warn-dim); color:var(--warn);}
+.row-badge.amb{background:var(--amb-dim); color:var(--amb);}
+.row-badge.bad{background:var(--bad-dim); color:var(--bad);}
+.row-badge.orfa{background:var(--orfa-dim); color:var(--orfa);}
+.row-badge.rev{background:var(--rev-dim); color:var(--rev);}
+
+.row-detail{
+  display:none;
+  margin-top:.75rem;
+  padding-top:.75rem;
+  border-top:1px solid var(--hairline);
+  font-size:13px;
+  color:var(--paper-dim);
+  line-height:1.6;
+}
+.row.expanded .row-detail{display:block;}
+.row-detail dl{
+  display:grid;
+  grid-template-columns:max-content 1fr;
+  gap:.35rem 1.2rem;
+}
+.row-detail dt{color:var(--paper-mute); font-family:var(--font-data); font-size:12px;}
+.row-detail dd{font-family:var(--font-data); font-size:12.5px;}
+.row-detail .obs{
+  margin-top:.6rem;
+  color:var(--paper);
+  font-family:var(--font-ui);
+}
+
+.empty{
+  padding:3rem 0;
+  text-align:center;
+  color:var(--paper-mute);
+  font-size:14px;
+}
+
+/* footer note */
+.notebox{
+  margin-top:4rem;
+  padding-top:1.6rem;
+  border-top:1px solid var(--hairline);
+  color:var(--paper-mute);
+  font-size:13px;
+  max-width:70ch;
+  line-height:1.6;
+}
+.notebox b{color:var(--paper-dim); font-weight:500;}
+
+@media(max-width:820px){
+  .tally{grid-template-columns:repeat(3,1fr);}
+  .tally .cell:nth-child(3n+1){border-left:none;}
+  .tally .cell{border-top:1px solid var(--hairline);}
+  .tally .cell:nth-child(-n+3){border-top:none;}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="masthead">
+    <div class="kicker">CASTELO FORTE · CF GROUP — AUDITORIA INTERNA</div>
+    <h1>Auditoria de transferências e uso &amp; consumo</h1>
+    <p class="sub">Cruzamento entre atendimento (solicitação registrada no Santri ADM) e execução real (transferência ou saída de estoque), para identificar pedidos não executados, execuções sem solicitação e divergências de quantidade, rota ou motivo.</p>
+    <div class="meta" id="meta-row"></div>
+  </header>
+
+  <section class="tally" id="tally"></section>
+
+  <section class="report" id="report-transferencias"></section>
+  <section class="report" id="report-uso"></section>
+
+  <p class="notebox">
+    <b>Sobre esta amostra.</b> Este relatório foi gerado a partir de 1 dia de exportação (31/08/2026) das Transferências e Correções de Estoque, cruzado com os atendimentos abertos no Santri ADM no mesmo período. O relatório de Uso e Consumo cobre um intervalo maior de datas (19–31/08) do que a Correção de Estoque exportada (só 31/08) — por isso a taxa de "não encontrado" ali está artificialmente alta nesta amostra, e deve cair bastante ao rodar com exportações do mês inteiro alinhadas no mesmo período. Itens de "revisão manual" são atendimentos onde não foi possível reconhecer automaticamente produto/quantidade no texto livre do pedido — precisam de conferência humana antes de entrar na contagem.
+  </p>
+</div>
+
+<script src="audit_data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
