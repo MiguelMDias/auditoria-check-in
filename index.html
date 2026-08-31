@@ -31,6 +31,8 @@
   --orfa-dim:#372430;
   --rev:#7C8CA8;
   --rev-dim:#232C3A;
+  --revok:#6FAE9E;
+  --revok-dim:#1E322E;
 
   --font-ui: 'Space Grotesk', sans-serif;
   --font-data: 'IBM Plex Mono', monospace;
@@ -85,10 +87,104 @@ body{padding:0 0 6rem;}
 }
 .masthead .meta b{color:var(--paper-dim); font-weight:500;}
 
+.masthead-top{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:1.5rem;
+  flex-wrap:wrap;
+}
+.userbadge{
+  display:flex;
+  align-items:center;
+  gap:.7rem;
+  font-family:var(--font-data);
+  font-size:12.5px;
+  padding:.5rem .5rem .5rem .9rem;
+  background:var(--ink-1);
+  border:1px solid var(--hairline);
+  flex:none;
+}
+.userbadge .avatar{
+  width:26px; height:26px;
+  background:var(--ink-3);
+  border:1px solid var(--hairline-strong);
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--font-ui); font-weight:600; font-size:12px;
+  color:var(--paper-dim);
+  flex:none;
+}
+.userbadge .nome{color:var(--paper); font-weight:600;}
+.userbadge button{
+  font-family:var(--font-data);
+  font-size:11px;
+  color:var(--paper-mute);
+  background:none;
+  border:1px solid var(--hairline);
+  padding:.3rem .55rem;
+  cursor:pointer;
+}
+.userbadge button:hover{color:var(--paper); border-color:var(--hairline-strong);}
+
+/* overlay de login (pede o nome de quem esta auditando) */
+.login-overlay{
+  position:fixed; inset:0;
+  background:rgba(6,8,11,0.88);
+  display:flex; align-items:center; justify-content:center;
+  z-index:100;
+  padding:1.5rem;
+}
+.login-overlay.hidden{display:none;}
+.login-box{
+  width:100%; max-width:400px;
+  background:var(--ink-1);
+  border:1px solid var(--hairline-strong);
+  padding:2rem;
+}
+.login-box .kicker{
+  font-family:var(--font-data); font-size:11.5px; color:var(--paper-mute);
+  letter-spacing:.04em; margin-bottom:.6rem;
+}
+.login-box h2{font-size:19px; font-weight:600; margin-bottom:.5rem;}
+.login-box p{font-size:13.5px; color:var(--paper-dim); margin-bottom:1.4rem; line-height:1.55;}
+.login-box input{
+  width:100%;
+  background:var(--ink-2);
+  border:1px solid var(--hairline);
+  color:var(--paper);
+  font-family:var(--font-ui);
+  font-size:14px;
+  padding:.75rem .9rem;
+  outline:none;
+  margin-bottom:.9rem;
+}
+.login-box input:focus{border-color:var(--hairline-strong);}
+.login-box button.entrar{
+  width:100%;
+  background:var(--ink-3);
+  border:1px solid var(--hairline-strong);
+  color:var(--paper);
+  font-family:var(--font-ui);
+  font-weight:600;
+  font-size:14px;
+  padding:.8rem;
+  cursor:pointer;
+}
+.login-box button.entrar:hover{border-color:var(--paper-mute);}
+.login-recentes{margin-top:1.1rem;}
+.login-recentes .lbl{font-size:11.5px; color:var(--paper-mute); margin-bottom:.5rem; font-family:var(--font-data);}
+.login-recentes .nomes{display:flex; gap:.5rem; flex-wrap:wrap;}
+.login-recentes .nomes button{
+  font-family:var(--font-data); font-size:12px;
+  background:var(--ink-2); border:1px solid var(--hairline);
+  color:var(--paper-dim); padding:.4rem .7rem; cursor:pointer;
+}
+.login-recentes .nomes button:hover{border-color:var(--hairline-strong); color:var(--paper);}
+
 /* ============ TALLY (KPI strip) ============ */
 .tally{
   display:grid;
-  grid-template-columns:repeat(7,1fr);
+  grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
   border-bottom:1px solid var(--hairline);
 }
 .tally .cell{
@@ -114,6 +210,7 @@ body{padding:0 0 6rem;}
 .tally .cell.bad .num{color:var(--bad);}
 .tally .cell.orfa .num{color:var(--orfa);}
 .tally .cell.rev .num{color:var(--rev);}
+.tally .cell.revok .num{color:var(--revok);}
 
 /* ============ SECTION ============ */
 .report{padding:3.4rem 0 0;}
@@ -146,17 +243,17 @@ body{padding:0 0 6rem;}
 }
 .stackbar span{height:100%;}
 
-/* filter chips */
-.chiprow{
+/* tabs de categoria (uma aba por veredito) */
+.tabbar{
   display:flex;
   gap:.5rem;
   flex-wrap:wrap;
-  margin-bottom:1.4rem;
+  margin-bottom:1.6rem;
 }
-.chip{
+.tab{
   font-family:var(--font-data);
-  font-size:12.5px;
-  padding:.5rem .85rem;
+  font-size:13px;
+  padding:.6rem .95rem;
   border:1px solid var(--hairline);
   background:var(--ink-1);
   color:var(--paper-dim);
@@ -164,12 +261,13 @@ body{padding:0 0 6rem;}
   user-select:none;
   display:flex;
   align-items:center;
-  gap:.5rem;
-  transition:border-color .12s ease, color .12s ease;
+  gap:.55rem;
+  transition:border-color .12s ease, color .12s ease, background .12s ease;
 }
-.chip:hover{border-color:var(--hairline-strong);}
-.chip .dot{width:7px; height:7px; flex:none;}
-.chip.active{color:var(--paper); border-color:var(--hairline-strong); background:var(--ink-2);}
+.tab:hover{border-color:var(--hairline-strong); color:var(--paper);}
+.tab .dot{width:7px; height:7px; flex:none;}
+.tab .count{font-weight:600;}
+.tab.active{color:var(--paper); background:var(--ink-2);}
 
 .searchbox{
   margin-bottom:1.6rem;
@@ -241,6 +339,48 @@ body{padding:0 0 6rem;}
 .row-badge.bad{background:var(--bad-dim); color:var(--bad);}
 .row-badge.orfa{background:var(--orfa-dim); color:var(--orfa);}
 .row-badge.rev{background:var(--rev-dim); color:var(--rev);}
+
+/* revisao manual (confirmar/rejeitar divergencia) */
+.row-badge.revok{background:var(--revok-dim); color:var(--revok);}
+.row.revok{border-left-color:var(--revok);}
+.revisao-actions{
+  margin-top:.9rem;
+  padding-top:.75rem;
+  border-top:1px dashed var(--hairline);
+  display:flex;
+  align-items:center;
+  gap:.6rem;
+  flex-wrap:wrap;
+}
+.revbtn{
+  font-family:var(--font-data);
+  font-size:12px;
+  padding:.4rem .7rem;
+  background:var(--ink-2);
+  border:1px solid var(--hairline-strong);
+  color:var(--paper-dim);
+  cursor:pointer;
+}
+.revbtn:hover{border-color:var(--paper-mute); color:var(--paper);}
+.revbtn.confirmar:hover{border-color:var(--warn); color:var(--warn);}
+.revbtn.rejeitar:hover{border-color:var(--revok); color:var(--revok);}
+.revisao-status{
+  font-size:12.5px;
+  color:var(--paper-dim);
+}
+.revisao-status b{font-weight:500;}
+.revisao-status.confirmado b{color:var(--warn);}
+.revisao-status.falso_positivo b{color:var(--revok);}
+.revisao-undo{
+  font-family:var(--font-data);
+  font-size:11.5px;
+  color:var(--paper-mute);
+  text-decoration:underline;
+  cursor:pointer;
+  background:none;
+  border:none;
+}
+.revisao-undo:hover{color:var(--paper);}
 
 .row-detail{
   display:none;
@@ -327,11 +467,30 @@ body{padding:0 0 6rem;}
 </head>
 <body>
 
+<div class="login-overlay" id="login-overlay">
+  <div class="login-box">
+    <div class="kicker">CASTELO FORTE · CF GROUP</div>
+    <h2>Quem está auditando?</h2>
+    <p>Seu nome fica registrado em cada divergência que você confirmar ou rejeitar, igual acontece no Portal Areia — pra saber quem já conferiu o quê.</p>
+    <input type="text" id="login-input" placeholder="Digite seu nome" autocomplete="off">
+    <button class="entrar" id="login-entrar">Entrar</button>
+    <div class="login-recentes" id="login-recentes" style="display:none">
+      <div class="lbl">Já usado neste navegador</div>
+      <div class="nomes" id="login-recentes-nomes"></div>
+    </div>
+  </div>
+</div>
+
 <div class="wrap">
   <header class="masthead">
-    <div class="kicker">CASTELO FORTE · CF GROUP — AUDITORIA INTERNA</div>
-    <h1>Auditoria de transferências e uso &amp; consumo</h1>
-    <p class="sub">Cruzamento entre atendimento (solicitação registrada no Santri ADM) e execução real (transferência ou saída de estoque), para identificar pedidos não executados, execuções sem solicitação e divergências de quantidade, rota ou motivo.</p>
+    <div class="masthead-top">
+      <div>
+        <div class="kicker">CASTELO FORTE · CF GROUP — AUDITORIA INTERNA</div>
+        <h1>Auditoria de transferências e uso &amp; consumo</h1>
+        <p class="sub">Cruzamento entre atendimento (solicitação registrada no Santri ADM) e execução real (transferência ou saída de estoque), para identificar pedidos não executados, execuções sem solicitação e divergências de quantidade, rota ou motivo.</p>
+      </div>
+      <div class="userbadge" id="userbadge"></div>
+    </div>
     <div class="meta" id="meta-row"></div>
   </header>
 
@@ -342,6 +501,9 @@ body{padding:0 0 6rem;}
 
   <p class="notebox">
     <b>Sobre esta amostra.</b> Este relatório foi gerado a partir de 1 dia de exportação (31/08/2026) das Transferências e Correções de Estoque, cruzado com os atendimentos abertos no Santri ADM no mesmo período. O relatório de Uso e Consumo cobre um intervalo maior de datas (19–31/08) do que a Correção de Estoque exportada (só 31/08) — por isso a taxa de "não encontrado" ali está artificialmente alta nesta amostra, e deve cair bastante ao rodar com exportações do mês inteiro alinhadas no mesmo período. Itens de "revisão manual" são atendimentos onde não foi possível reconhecer automaticamente produto/quantidade no texto livre do pedido — precisam de conferência humana antes de entrar na contagem.
+  </p>
+  <p class="notebox">
+    <b>Confirmar ou rejeitar divergências.</b> Em qualquer item "Divergente" ou "Ambíguo", abrindo o detalhe aparecem dois botões: <i>Confirmar divergência real</i> (mantém marcado, e grava seu nome e a data/hora de quem conferiu) e <i>Não é divergência (erro do parser)</i> (remove da contagem de divergências, mostrando que o cruzamento automático errou nesse caso, também com seu nome registrado). Essa marcação fica salva no navegador deste computador (não é enviada a lugar nenhum, não aparece pra quem abrir o arquivo em outro computador, e não é apagada ao gerar um novo <code>audit_data.js</code>) — é uma trilha pessoal de conferência, não substitui documentar a decisão em algum lugar oficial se for relevante.
   </p>
 </div>
 
