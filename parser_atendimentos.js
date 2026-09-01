@@ -98,7 +98,7 @@ const ALIASES_LOJA = {
   CFW3:  ["CFW3", "ASA NORTE", "W3"],
   CFT:   ["CFT", "TAGUATINGA"],
   CFG:   ["CFG", "GAMA"],
-  CFJB:  ["CFJB", "JARDIM BOTANICO"],
+  CFJB:  ["CFJB", "JARDIM BOTANICO", "JARDIM"],
   CFPA:  ["CFPA", "PONTE ALTA"],
   CFBS:  ["CFBS", "BERNARDO SAYAO", "BERNADO SAYAO"],
   CAP99: ["CAP99", "CAPITAL ATACADISTA", "CAPITAL"],
@@ -134,7 +134,7 @@ const PLACE_ALT = TODOS_ALIASES.map(a => escapeRegex(a).replace(/\\ /g, '\\s+'))
 const PLACE_RE_TXT = '(?:' + PLACE_ALT + ')';
 
 const ROUTE_PATTERNS = [
-  '\\bDA\\s+(?<origem>' + PLACE_RE_TXT + ')\\s+PARA\\s+(?:O\\s+|A\\s+)?(?<destino>' + PLACE_RE_TXT + ')\\b',
+  '\\bD[AO]\\s+(?<origem>' + PLACE_RE_TXT + ')\\s+PARA\\s+(?:O\\s+|A\\s+)?(?<destino>' + PLACE_RE_TXT + ')\\b',
   '\\b(?<origem>' + PLACE_RE_TXT + ')\\s*[>\\-]{1,2}\\s*(?<destino>' + PLACE_RE_TXT + ')\\b',
   '\\b(?<origem>' + PLACE_RE_TXT + ')\\s+P\\/\\s*(?<destino>' + PLACE_RE_TXT + ')\\b',
   '\\b(?<origem>' + PLACE_RE_TXT + ')\\s+PARA\\s+(?<destino>' + PLACE_RE_TXT + ')\\b',

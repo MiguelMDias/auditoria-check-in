@@ -27,17 +27,6 @@ ABERTO_RE = re.compile(
     r'^\s*Aberto\s+(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2}:\d{2})\s+(.+?)\s*$'
 )
 
-# marcadores de rota origem->destino (varias variacoes encontradas no texto real)
-ROUTE_PATTERNS = [
-    r'\bDA\s+(?P<origem>[A-Z]{2,5})\s+PARA\s+(?:O\s+|A\s+)?(?P<destino>[A-Z]{2,5})\b',
-    r'\b(?P<origem>[A-Z]{2,5})\s*[>\-]{1,2}\s*(?P<destino>[A-Z]{2,5})\b',
-    r'\b(?P<origem>[A-Z]{2,5})\s+P/\s*(?P<destino>[A-Z]{2,5})\b',
-    r'\b(?P<origem>[A-Z]{2,5})\s+PARA\s+(?P<destino>[A-Z]{2,5})\b',
-    r'\bLOJA\s+(?P<origem>[A-Z]{2,5})\s+DESTINO\s+(?P<destino>[A-Z]{2,5})\b',
-    r'\bDE:\s*(?P<origem>[A-Z]{2,5})\b.*?\bPARA:\s*(?P<destino>[A-Z]{2,5})\b',
-]
-ROUTE_RES = [re.compile(p, re.IGNORECASE) for p in ROUTE_PATTERNS]
-
 KNOWN_EMPRESAS = {"CFS","CFVP","CFR","CFC","CFW3","CFT","CFG","CFJB","CFPA","CFBS","CAP99"}
 
 # apelidos por extenso das lojas (o solicitante as vezes escreve o nome da cidade
@@ -50,7 +39,7 @@ ALIASES_LOJA = {
     "CFW3":  ["CFW3", "ASA NORTE", "W3"],
     "CFT":   ["CFT", "TAGUATINGA"],
     "CFG":   ["CFG", "GAMA"],
-    "CFJB":  ["CFJB", "JARDIM BOTANICO"],
+    "CFJB":  ["CFJB", "JARDIM BOTANICO", "JARDIM"],
     "CFPA":  ["CFPA", "PONTE ALTA"],
     "CFBS":  ["CFBS", "BERNARDO SAYAO", "BERNADO SAYAO"],
     "CAP99": ["CAP99", "CAPITAL ATACADISTA", "CAPITAL"],
@@ -86,7 +75,7 @@ PLACE_RE_TXT = r'(?:' + _PLACE_ALT + r')'
 # marcadores de rota origem->destino (varias variacoes encontradas no texto real),
 # agora aceitando tanto o codigo da empresa quanto o nome da cidade por extenso
 ROUTE_PATTERNS = [
-    r'\bDA\s+(?P<origem>' + PLACE_RE_TXT + r')\s+PARA\s+(?:O\s+|A\s+)?(?P<destino>' + PLACE_RE_TXT + r')\b',
+    r'\bD[AO]\s+(?P<origem>' + PLACE_RE_TXT + r')\s+PARA\s+(?:O\s+|A\s+)?(?P<destino>' + PLACE_RE_TXT + r')\b',
     r'\b(?P<origem>' + PLACE_RE_TXT + r')\s*[>\-]{1,2}\s*(?P<destino>' + PLACE_RE_TXT + r')\b',
     r'\b(?P<origem>' + PLACE_RE_TXT + r')\s+P/\s*(?P<destino>' + PLACE_RE_TXT + r')\b',
     r'\b(?P<origem>' + PLACE_RE_TXT + r')\s+PARA\s+(?P<destino>' + PLACE_RE_TXT + r')\b',
