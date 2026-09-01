@@ -18,6 +18,29 @@ STOPWORDS = {
     'e','o','a','os','as','um','uma','n','no','na',
 }
 
+# so' transferencias feitas por esses funcionarios entram na auditoria - qualquer
+# transferencia executada por outra pessoa e' ignorada por completo (nem casa com
+# atendimento, nem vira "execucao orfa" - some da contagem inteira).
+FUNCIONARIOS_PERMITIDOS = {
+    "4023",  # Miguel
+    "4121",  # Marcos Vinicius
+    "4140",  # Ramos
+    "2696",  # Dias
+    "4260",  # Deyvid
+    "4645",  # Tavares
+    "3725",  # Queiroz
+}
+
+def _codigo_usuario(usuario_str):
+    """extrai o codigo numerico do inicio de 'usuario_insercao', ex: '4.023 - MIGUEL 1247' -> '4023'"""
+    if not usuario_str:
+        return None
+    primeiro_token = str(usuario_str).strip().split(' ')[0] if str(usuario_str).strip() else ''
+    return primeiro_token.replace('.', '')
+
+def eh_funcionario_permitido(usuario_str):
+    return _codigo_usuario(usuario_str) in FUNCIONARIOS_PERMITIDOS
+
 # palavras genericas demais pra sozinhas confirmarem que dois produtos sao o mesmo
 # (cor sozinha nao prova nada: "agasalho azul" e "luva azul" nao sao o mesmo item)
 TOKENS_GENERICOS = {
@@ -66,6 +89,10 @@ def match_transferencias(atendimentos, transferencias):
     atendimentos: lista do parser_atendimentos (status_extracao == 'ok', tipo TRANSFERENCIA)
     transferencias: lista do parser_ods.parse_transferencias
     """
+    # ignora por completo transferencias feitas por quem nao esta na lista de
+    # funcionarios permitidos - nem entram no cruzamento, nem sobram como orfa
+    transferencias = [t for t in transferencias if eh_funcionario_permitido(t.get('usuario_insercao'))]
+
     # indice por (produto normalizado) -> lista de transferencias que tem esse produto num item
     idx = {}
     for t in transferencias:
@@ -105,7 +132,7 @@ def match_transferencias(atendimentos, transferencias):
 
                 if not candidatos:
                     registro['veredito'] = 'NAO_ENCONTRADO'
-                    registro['detalhe'] = 'nenhuma transferência encontrada com este produto'
+                    registro['detalhe'] = 'Nenhuma transferência no sistema tem esse produto — o pedido pode não ter sido executado ainda, ou foi lançado com um código de produto diferente.'
                     resultado.append(registro)
                     continue
 
@@ -114,13 +141,13 @@ def match_transferencias(atendimentos, transferencias):
 
                 if len(melhores) > 1 and candidatos[0]['score'] < 2:
                     registro['veredito'] = 'AMBIGUO'
-                    registro['detalhe'] = f'{len(melhores)} transferências candidatas, nenhuma bate 100% (rota+quantidade)'
+                    registro['detalhe'] = f'Encontrei {len(melhores)} transferências com este produto, mas nenhuma bate exatamente em rota e quantidade ao mesmo tempo — confira manualmente qual delas corresponde a este pedido.'
                     registro['candidatos'] = [c['transferencia']['codigo'] for c in melhores[:5]]
                     resultado.append(registro)
                     continue
                 if len(melhores) > 1 and candidatos[0]['score'] == 2:
                     registro['veredito'] = 'AMBIGUO'
-                    registro['detalhe'] = f'{len(melhores)} transferências batem exatamente (produto+rota+quantidade) - possível duplicidade'
+                    registro['detalhe'] = f'Encontrei {len(melhores)} transferências que batem exatamente (produto, rota e quantidade) — pode ser duplicidade de lançamento, ou duas transferências reais e idênticas no mesmo dia. Confirme qual pertence a este pedido.'
                     registro['candidatos'] = [c['transferencia']['codigo'] for c in melhores[:5]]
                     resultado.append(registro)
                     continue
@@ -135,21 +162,35 @@ def match_transferencias(atendimentos, transferencias):
                 registro['quantidade_executada'] = it['quantidade']
 
                 problemas = []
+                tipos = []
                 if not c['rota_ok']:
-                    problemas.append(f"rota diverge (pedido: {sub['origem']}->{sub['destino']}, executado: {t['empresa_origem']}->{t['empresa_destino']})")
+                    tipos.append('rota')
+                    problemas.append(
+                        f"Rota diferente da pedida: o atendimento pediu {sub['origem'] or '?'} → {sub['destino'] or '?'}, "
+                        f"mas a transferência encontrada foi de {t['empresa_origem']} → {t['empresa_destino']}."
+                    )
                 if not c['qtd_ok']:
-                    problemas.append(f"quantidade diverge (pedido: {prod['quantidade']}, executado: {it['quantidade']})")
-                if sub['pedido_cliente'] and not t['motivo'].strip().startswith('2'):
-                    problemas.append(f"tem número de PEDIDO de cliente ({sub['pedido_cliente']}) mas motivo da transferência não é '2 - atender pedido' (motivo real: {t['motivo']})")
-                if not sub['pedido_cliente'] and t['motivo'].strip().startswith('2'):
-                    problemas.append("transferência veio com motivo '2 - atender pedido' mas atendimento não cita PEDIDO de cliente")
+                    tipos.append('quantidade')
+                    try:
+                        falta = float(str(prod['quantidade']).replace(',', '.')) - float(it['quantidade'])
+                        falta_txt = f" (diferença de {abs(round(falta, 3))})" if falta != 0 else ""
+                    except (TypeError, ValueError):
+                        falta_txt = ""
+                    problemas.append(
+                        f"Quantidade diferente: pedido pediu {prod['quantidade']}, "
+                        f"transferência executou {it['quantidade']}{falta_txt}."
+                    )
+                # (nao checa mais pareamento motivo "2 - atender pedido" x numero de PEDIDO
+                # no atendimento - dava falso positivo demais, pedido do parser nem sempre
+                # cita o numero do PEDIDO mesmo quando a transferencia e' motivo 2 de verdade)
 
                 if problemas:
                     registro['veredito'] = 'DIVERGENTE'
-                    registro['detalhe'] = '; '.join(problemas)
+                    registro['tipos_divergencia'] = tipos
+                    registro['detalhe'] = ' '.join(problemas)
                 else:
                     registro['veredito'] = 'BATIDO'
-                    registro['detalhe'] = 'produto, quantidade e rota conferem'
+                    registro['detalhe'] = 'Produto, quantidade e rota conferem entre o pedido e a execução.'
                 resultado.append(registro)
 
     # transferencias executadas sem NENHUM atendimento de origem (execucao "orfa")
@@ -165,7 +206,7 @@ def match_transferencias(atendimentos, transferencias):
                     'motivo': t['motivo'], 'data': t['data_cadastro'],
                     'transferencia_usuario': t.get('usuario_insercao'),
                     'veredito': 'SEM_ATENDIMENTO',
-                    'detalhe': 'transferência executada no sistema sem atendimento de solicitação correspondente encontrado',
+                    'detalhe': 'Esta transferência foi executada no sistema, mas não encontrei nenhum atendimento (solicitação) que a originou.',
                 })
     return resultado, orfas
 
@@ -235,9 +276,11 @@ def match_uso_consumo(atendimentos, correcoes):
                 }
                 if not candidatos:
                     registro['veredito'] = 'NAO_ENCONTRADO'
-                    registro['detalhe'] = ('nenhuma saída de uso/consumo com produto/descrição correspondente'
-                                            if not usa_nome else
-                                            'nenhuma saída de uso/consumo com descrição parecida com "%s"' % prod.get('nome'))
+                    registro['detalhe'] = (
+                        'Nenhuma saída de uso/consumo com este produto no sistema.'
+                        if not usa_nome else
+                        f'Nenhuma saída de uso/consumo com descrição parecida com "{prod.get("nome")}".'
+                    )
                     resultado.append(registro)
                     continue
 
@@ -245,8 +288,8 @@ def match_uso_consumo(atendimentos, correcoes):
                 escolhidos = exatos if exatos else candidatos
                 if len(escolhidos) > 1:
                     registro['veredito'] = 'AMBIGUO'
-                    registro['detalhe'] = f'{len(escolhidos)} correções candidatas para o mesmo produto' + \
-                        (' (casado por nome, confira manualmente)' if usa_nome else '')
+                    registro['detalhe'] = f'Encontrei {len(escolhidos)} correções de estoque candidatas para o mesmo produto' + \
+                        (' — casamento por nome, confira manualmente qual é a correta.' if usa_nome else ' — confira manualmente qual pertence a este pedido.')
                     registro['candidatos'] = [c['correcao']['codigo'] for c in escolhidos[:5]]
                     resultado.append(registro)
                     continue
@@ -262,10 +305,11 @@ def match_uso_consumo(atendimentos, correcoes):
                 registro['casado_por'] = 'nome (sem código no pedido)' if usa_nome else 'código'
                 if not c['qtd_ok']:
                     registro['veredito'] = 'DIVERGENTE'
-                    registro['detalhe'] = f"quantidade diverge (pedido: {prod['quantidade']}, executado: {it['quantidade']})"
+                    registro['tipos_divergencia'] = ['quantidade']
+                    registro['detalhe'] = f"Quantidade diferente: pedido pediu {prod['quantidade']}, saída de estoque registrou {it['quantidade']}."
                 else:
                     registro['veredito'] = 'BATIDO'
-                    registro['detalhe'] = 'produto e quantidade conferem' + (' (casado por nome)' if usa_nome else '')
+                    registro['detalhe'] = 'Produto e quantidade conferem.' + (' Casado por nome (sem código no pedido).' if usa_nome else '')
                 resultado.append(registro)
 
     orfas = []
@@ -280,6 +324,6 @@ def match_uso_consumo(atendimentos, correcoes):
                     'quantidade': it['quantidade'], 'empresa': c['empresa'], 'data': c['data'],
                     'correcao_usuario': c.get('usuario_retirou') or c.get('usuario_insercao'),
                     'veredito': 'SEM_ATENDIMENTO',
-                    'detalhe': 'saída de uso/consumo lançada no sistema sem atendimento de solicitação correspondente',
+                    'detalhe': 'Esta saída de uso/consumo foi lançada no sistema, mas não encontrei nenhum atendimento (solicitação) que a originou.',
                 })
     return resultado, orfas

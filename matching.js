@@ -10,6 +10,29 @@ const TOKENS_GENERICOS = new Set([
   'novo','nova','tam','xg','gg','g','m','p','pp',
 ]);
 
+// so' transferencias feitas por esses funcionarios entram na auditoria - qualquer
+// transferencia executada por outra pessoa e' ignorada por completo (nem casa com
+// atendimento, nem vira "execucao orfa" - some da contagem inteira).
+const FUNCIONARIOS_PERMITIDOS = new Set([
+  '4023',  // Miguel
+  '4121',  // Marcos Vinicius
+  '4140',  // Ramos
+  '2696',  // Dias
+  '4260',  // Deyvid
+  '4645',  // Tavares
+  '3725',  // Queiroz
+]);
+
+function codigoUsuario(usuarioStr){
+  if (!usuarioStr) return null;
+  const primeiroToken = String(usuarioStr).trim().split(' ')[0] || '';
+  return primeiroToken.split('.').join('');
+}
+
+function ehFuncionarioPermitido(usuarioStr){
+  return FUNCIONARIOS_PERMITIDOS.has(codigoUsuario(usuarioStr));
+}
+
 const ACCENT_MAP_MATCHING = {
   'á':'a','à':'a','â':'a','ã':'a','ä':'a','é':'e','è':'e','ê':'e','ë':'e',
   'í':'i','ì':'i','î':'i','ï':'i','ó':'o','ò':'o','ô':'o','õ':'o','ö':'o',
@@ -51,6 +74,10 @@ function qtdBate(q1, q2, tolerancia=0.001){
 }
 
 function matchTransferencias(atendimentos, transferencias){
+  // ignora por completo transferencias feitas por quem nao esta na lista de
+  // funcionarios permitidos - nem entram no cruzamento, nem sobram como orfa
+  transferencias = transferencias.filter(t => ehFuncionarioPermitido(t.usuario_insercao));
+
   const idx = {};
   for (const t of transferencias){
     for (const it of t.itens){
@@ -130,14 +157,9 @@ function matchTransferencias(atendimentos, transferencias){
           const diff = (!Number.isNaN(p1) && !Number.isNaN(p2)) ? ` (diferença de ${Math.abs(Math.round((p1-p2)*1000)/1000)})` : '';
           problemas.push(`Quantidade diferente: pedido pediu ${prod.quantidade}, transferência executou ${c.it.quantidade}${diff}.`);
         }
-        if (sub.pedido_cliente && !String(c.t.motivo).trim().startsWith('2')){
-          tipos.push('motivo_pedido_sem_2');
-          problemas.push(`Atendimento cita o pedido de cliente ${sub.pedido_cliente}, mas a transferência foi lançada com motivo "${c.t.motivo}" em vez de "2 - Transferência para atender pedido".`);
-        }
-        if (!sub.pedido_cliente && String(c.t.motivo).trim().startsWith('2')){
-          tipos.push('motivo_2_sem_pedido');
-          problemas.push('Transferência foi lançada com motivo "2 - Transferência para atender pedido", mas o atendimento não cita nenhum número de pedido de cliente.');
-        }
+        // (nao checa mais pareamento motivo "2 - atender pedido" x numero de PEDIDO -
+        // dava falso positivo demais, texto do atendimento nem sempre cita o numero
+        // do PEDIDO mesmo quando a transferencia e' motivo 2 de verdade)
 
         if (problemas.length){
           registro.veredito = 'DIVERGENTE';
