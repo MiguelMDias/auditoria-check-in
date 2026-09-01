@@ -466,6 +466,17 @@ def parse_atendimento_block(block_lines):
             'texto_bruto': seg['texto'][:300],
         })
 
+    # se so' existe UM numero de pedido pra todo o atendimento (comum quando o mesmo
+    # pedido de cliente e' atendido a partir de varias lojas de origem por falta de
+    # estoque - o PEDIDO aparece uma vez so, no topo, valendo pra todas as rotas),
+    # propaga esse numero pras rotas que nao tem pedido proprio no seu segmento.
+    # Se houver mais de um numero de pedido distinto, NAO propaga (cada um ja deve
+    # estar no segmento certo, propagar seria arriscar atribuir errado).
+    if len(pedidos) == 1:
+        for sp in sub_pedidos:
+            if sp['pedido_cliente'] is None:
+                sp['pedido_cliente'] = pedidos[0]
+
     tem_produto = any(sp['produtos'] for sp in sub_pedidos)
 
     return {

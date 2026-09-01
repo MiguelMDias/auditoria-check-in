@@ -339,6 +339,16 @@ function parseAtendimentoBlock(blockLines){
     };
   });
 
+  // se so' existe UM numero de pedido pra todo o atendimento (mesmo pedido de
+  // cliente atendido a partir de varias lojas de origem), propaga pras rotas
+  // que nao tem pedido proprio no seu segmento. Com mais de um pedido distinto,
+  // nao propaga - cada um ja deve estar no segmento certo.
+  if (pedidos.length === 1){
+    for (const sp of subPedidos){
+      if (sp.pedido_cliente === null) sp.pedido_cliente = pedidos[0];
+    }
+  }
+
   const temProduto = subPedidos.some(sp => sp.produtos.length);
 
   return {
