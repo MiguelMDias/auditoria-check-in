@@ -114,7 +114,7 @@ PRODUCT_LINE_RE = re.compile(
     r'\(?'                                                  # parenteses opcionais em volta (ex: "68.945(04 UNID.)")
     r'(\d{1,3}(?:\.\d{3})+|\d{4,8})'                      # codigo do produto
     r'\)?'
-    r'\s*(?:[-\.>=/]{1,25}|QT\.?D?\.?|QUANT\.?|QUANTIDADE|QDT\.?)?\s*[:=]?\s*'  # separador (simbolo, palavra, ou so espaco)
+    r'\s*(?:[-\.>=/]{1,25}|QT\.?D?\.?|QUANT\.?|QUANTIDADE|QDT\.?|QUAT\.?)?\s*[:=]?\s*'  # separador (simbolo, palavra, ou so espaco)
     r'\(?'
     r'(\d+(?:[.,]\d+)?)\s*'                                # quantidade
     r'(UND\.?|UN\.?|UNID\.?|UNIDADES?|UNI\.?|MTS?|M2|M3|SC|KG|LT|LITROS?|PCT|CX|PE[ÇC]AS?)?'
@@ -350,22 +350,9 @@ def _dedup_overlaps(matches):
         dedup.append(m)
     return dedup
 
-def extract_route_segments(text):
-    """
-    Divide o texto em segmentos por marcador de rota. Retorna lista de dicts:
-    {origem, destino, texto_produtos}
-    Se nao achar nenhuma rota, retorna 1 segmento sem origem/destino (rota indefinida).
-
-    Roda o casamento numa versao do texto sem acento/maiuscula (mesmo tamanho da
-    original, char a char) pra aceitar "Ceilândia"/"CEILANDIA"/"ceilandia" igual,
-    mas fatiar o texto ORIGINAL nas mesmas posicoes (os indices batem 1-a-1).
-
-    O rotulo de rota (completa "DA X PARA Y" ou so' origem "DA LOJA DE X") sempre
-    vale pro texto que vem DEPOIS dele, ate' o proximo rotulo - e' como as pessoas
-    escrevem na pratica: primeiro dizem de onde/pra onde, depois listam os itens.
-    """
+def _find_route_matches(text):
+    """acha todos os marcadores de rota (completos ou so-origem) no texto, deduplicados"""
     texto_norm = sem_acento_maiuscula(text)
-
     matches = []
     for rx in ROUTE_RES:
         for m in rx.finditer(texto_norm):
@@ -378,11 +365,11 @@ def extract_route_segments(text):
             if o:
                 matches.append((m.start(), m.end(), o, None))
     matches.sort(key=lambda x: (x[0], -(x[1] - x[0])))
-    matches = _dedup_overlaps(matches)
+    return _dedup_overlaps(matches)
 
-    if not matches:
-        return [{'origem': None, 'destino': None, 'texto': text}]
-
+def _segments_forward(text, matches):
+    """o rotulo vale pro texto que vem DEPOIS dele, ate o proximo rotulo (padrao
+    'DA X PARA Y' \\n item \\n item \\n 'DA W PARA Z' \\n item...)"""
     segments = []
     for i, (start, end, o, d) in enumerate(matches):
         seg_start = end
@@ -392,6 +379,50 @@ def extract_route_segments(text):
     if pre_text:
         segments[0]['texto'] = pre_text + '\n' + segments[0]['texto']
     return segments
+
+def _segments_backward(text, matches):
+    """o rotulo vale pro texto que vem ANTES dele, desde o rotulo anterior (padrao
+    item \\n 'DE X PARA Y' \\n item \\n 'DE W PARA Z'...) - tao comum quanto o forward"""
+    segments = []
+    prev_end = 0
+    for (start, end, o, d) in matches:
+        segments.append({'origem': o, 'destino': d, 'texto': text[prev_end:start].strip()})
+        prev_end = end
+    trailing = text[prev_end:].strip()
+    if trailing and segments:
+        segments[-1]['texto'] = (segments[-1]['texto'] + '\n' + trailing).strip()
+    return segments
+
+def extract_route_segments(text):
+    """
+    Divide o texto em segmentos por marcador de rota. Retorna lista de dicts:
+    {origem, destino, texto_produtos}
+    Se nao achar nenhuma rota, retorna 1 segmento sem origem/destino (rota indefinida).
+
+    Roda o casamento numa versao do texto sem acento/maiuscula (mesmo tamanho da
+    original, char a char) pra aceitar "Ceilândia"/"CEILANDIA"/"ceilandia" igual,
+    mas fatiar o texto ORIGINAL nas mesmas posicoes (os indices batem 1-a-1).
+
+    O rotulo de rota pode vir ANTES do item que descreve ("DA X PARA Y" seguido da
+    lista) ou DEPOIS ("item" seguido de "DE X PARA Y") - as duas formas aparecem na
+    pratica, dependendo de quem digitou o pedido. Por isso tenta as duas direcoes
+    (forward e backward) e escolhe a que deixa CADA rota com pelo menos 1 produto
+    reconhecido e sem sobra - a direcao errada tende a duplicar item em uma rota e
+    deixar outra vazia.
+    """
+    matches = _find_route_matches(text)
+    if not matches:
+        return [{'origem': None, 'destino': None, 'texto': text}]
+    if len(matches) == 1:
+        return _segments_forward(text, matches)  # com 1 rota so, forward e backward dao no mesmo
+
+    forward = _segments_forward(text, matches)
+    backward = _segments_backward(text, matches)
+
+    def vazios(segments):
+        return sum(1 for s in segments if s['origem'] and not extract_products(s['texto']))
+
+    return forward if vazios(forward) <= vazios(backward) else backward
 
 def extract_products(text):
     # remove linhas de "PEDIDO: NNNNN" antes de procurar produtos, senao o proprio

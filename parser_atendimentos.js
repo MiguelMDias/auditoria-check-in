@@ -158,7 +158,7 @@ function dedupOverlaps(matches){
   return dedup;
 }
 
-function extractRouteSegments(text){
+function findRouteMatches(text){
   const textoNorm = semAcentoMaiuscula(text);
   let matches = [];
   for (const rx of ROUTE_RES){
@@ -180,10 +180,10 @@ function extractRouteSegments(text){
     }
   }
   matches.sort((a,b) => a[0] - b[0] || (b[1]-b[0]) - (a[1]-a[0]));
-  matches = dedupOverlaps(matches);
+  return dedupOverlaps(matches);
+}
 
-  if (!matches.length) return [{ origem: null, destino: null, texto: text }];
-
+function segmentsForward(text, matches){
   const segments = [];
   for (let i = 0; i < matches.length; i++){
     const [start, end, o, d] = matches[i];
@@ -196,6 +196,29 @@ function extractRouteSegments(text){
   return segments;
 }
 
+function segmentsBackward(text, matches){
+  const segments = [];
+  let prevEnd = 0;
+  for (const [start, end, o, d] of matches){
+    segments.push({ origem: o, destino: d, texto: text.slice(prevEnd, start).trim() });
+    prevEnd = end;
+  }
+  const trailing = text.slice(prevEnd).trim();
+  if (trailing && segments.length) segments[segments.length-1].texto = (segments[segments.length-1].texto + '\n' + trailing).trim();
+  return segments;
+}
+
+function extractRouteSegments(text){
+  const matches = findRouteMatches(text);
+  if (!matches.length) return [{ origem: null, destino: null, texto: text }];
+  if (matches.length === 1) return segmentsForward(text, matches);
+
+  const forward = segmentsForward(text, matches);
+  const backward = segmentsBackward(text, matches);
+  const vazios = segs => segs.filter(s => s.origem && !extractProducts(s.texto).length).length;
+  return vazios(forward) <= vazios(backward) ? forward : backward;
+}
+
 // ---------------- produtos ----------------
 function normCode(s){ return s.split('.').join(''); }
 
@@ -204,7 +227,7 @@ const PRODUCT_LINE_RE = new RegExp(
   '\\(?' +
   '(\\d{1,3}(?:\\.\\d{3})+|\\d{4,8})' +
   '\\)?' +
-  '\\s*(?:[-.>=\\/]{1,25}|QT\\.?D?\\.?|QUANT\\.?|QUANTIDADE|QDT\\.?)?\\s*[:=]?\\s*' +
+  '\\s*(?:[-.>=\\/]{1,25}|QT\\.?D?\\.?|QUANT\\.?|QUANTIDADE|QDT\\.?|QUAT\\.?)?\\s*[:=]?\\s*' +
   '\\(?' +
   '(\\d+(?:[.,]\\d+)?)\\s*' +
   '(UND\\.?|UN\\.?|UNID\\.?|UNIDADES?|UNI\\.?|MTS?|M2|M3|SC|KG|LT|LITROS?|PCT|CX|PE[ÇC]AS?)?' +
