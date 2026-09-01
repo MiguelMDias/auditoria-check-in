@@ -320,6 +320,18 @@ function revisaoActions(r){
   </div>`;
 }
 
+function usuariosDaLinha(r, kind){
+  const nomes = [];
+  if (r.atendimento_usuario_baixa) nomes.push(r.atendimento_usuario_baixa);
+  if (kind === 'transf'){
+    if (r.transferencia_usuario) nomes.push(r.transferencia_usuario);
+  } else {
+    if (r.correcao_usuario) nomes.push(r.correcao_usuario);
+  }
+  if (r.usuario_baixa) nomes.push(r.usuario_baixa); // linhas de revisao manual
+  return nomes;
+}
+
 function searchKey(r, kind){
   const parts = [];
   if (kind === 'transf'){
@@ -327,6 +339,7 @@ function searchKey(r, kind){
   } else {
     parts.push(r.atendimento_controle, r.correcao_codigo, r.produto, r.empresa, r.controle, r.texto_original);
   }
+  parts.push(...usuariosDaLinha(r, kind));
   return parts.filter(Boolean).join(' ').toLowerCase();
 }
 
@@ -338,8 +351,11 @@ function buildReport(containerId, title, dataBlock, kind){
   const revisao = dataBlock.revisao_manual.map(r => ({ ...r, veredito: 'REVISAO', _id: rowId({...r, veredito:'REVISAO'}, kind) }));
   const all = [...resultados, ...orfas, ...revisao];
 
+  const usuariosUnicos = [...new Set(all.flatMap(r => usuariosDaLinha(r, kind)))].sort((a,b) => a.localeCompare(b, 'pt-BR'));
+
   let currentFilter = 'ALL';
   let currentSearch = '';
+  let currentUsuario = 'ALL';
   const expandedIds = new Set();
 
   function renderHeader(){
@@ -360,7 +376,13 @@ function buildReport(containerId, title, dataBlock, kind){
           return `<div class="tab${active?' active':''}" data-f="${k}" style="${active?`border-color:${m.color}`:''}"><span class="dot" style="background:${m.color}"></span><span>${m.label}</span><span class="count">${counts[k]}</span></div>`;
         }).join('')}
       </div>
-      <div class="searchbox"><input type="text" placeholder="buscar por código, produto, controle..." id="${containerId}-search" value="${currentSearch}"></div>
+      <div class="searchbox">
+        <input type="text" placeholder="buscar por código, produto, controle..." id="${containerId}-search" value="${currentSearch}">
+        <select id="${containerId}-usuario">
+          <option value="ALL">Todos os usuários</option>
+          ${usuariosUnicos.map(u => `<option value="${u.replace(/"/g,'&quot;')}"${currentUsuario===u?' selected':''}>${u}</option>`).join('')}
+        </select>
+      </div>
       <div class="ledger" id="${containerId}-list"></div>
     `;
     document.getElementById(`${containerId}-chips`).addEventListener('click', e => {
@@ -373,6 +395,10 @@ function buildReport(containerId, title, dataBlock, kind){
       currentSearch = e.target.value.trim().toLowerCase();
       renderList();
     });
+    document.getElementById(`${containerId}-usuario`).addEventListener('change', e => {
+      currentUsuario = e.target.value;
+      renderList();
+    });
   }
 
   function renderList(){
@@ -380,6 +406,7 @@ function buildReport(containerId, title, dataBlock, kind){
     if (!list) return;
     const filtered = all.filter(r => {
       if (currentFilter !== 'ALL' && efeitoVeredito(r) !== currentFilter) return false;
+      if (currentUsuario !== 'ALL' && !usuariosDaLinha(r, kind).includes(currentUsuario)) return false;
       if (currentSearch && !searchKey(r, kind).includes(currentSearch)) return false;
       return true;
     });
