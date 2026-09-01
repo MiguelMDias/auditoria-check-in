@@ -169,6 +169,32 @@ LEADING_QTY_NAME_RE = re.compile(
     r'\b(\d{1,2})\s+([A-ZÀ-Ú]{3,}(?:\s+[A-ZÀ-Ú]{2,}){0,2})\s*$'
 )
 
+# piso/porcelanato/revestimento: transferido por METRO QUADRADO (nao por unidade/caixa).
+# formato: "118.979  PISO A 62X62 BOLD AC CX 4,640 MT" - codigo, nome do produto por
+# extenso (que pode ter dimensoes tipo "62X62" no meio, cuidado pra nao confundir com
+# codigo/quantidade), "CX" opcional, e a quantidade em m2 sempre no FINAL da linha com "MT".
+PISO_MT_RE = re.compile(
+    r'^\s*(\d{1,3}(?:\.\d{3})+|\d{4,8})\s+'      # codigo do produto
+    r'.+?'                                        # nome do produto (nao-guloso, pode ter "NNxNN")
+    r'\s+(?:CX\s+)?'                              # "CX" opcional antes da quantidade
+    r'(\d+(?:[.,]\d+)?)\s*MT\.?\s*$',             # quantidade em m2, sempre termina em "MT"
+    re.IGNORECASE
+)
+
+def extract_products_piso_mt(text):
+    produtos = []
+    for linha in text.split('\n'):
+        linha = linha.strip()
+        if not linha:
+            continue
+        m = PISO_MT_RE.match(linha)
+        if m:
+            codigo, qtd = m.groups()
+            produtos.append({'codigo': norm_code(codigo), 'nome': None,
+                              'quantidade': qtd.replace(',', '.'), 'unidade': 'MT2',
+                              'metodo': 'piso_m2'})
+    return produtos
+
 def extract_products_fallback(text):
     produtos = []
     achados_qtd_pos = set()
@@ -381,6 +407,8 @@ def extract_products(text):
             'unidade': (und or '').upper() or None,
             'metodo': 'codigo>qtd',
         })
+    if not produtos:
+        produtos = extract_products_piso_mt(text_sem_pedido)
     if not produtos:
         produtos = extract_products_fallback(text_sem_pedido)
     return produtos

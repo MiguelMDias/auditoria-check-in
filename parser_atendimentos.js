@@ -220,6 +220,25 @@ const SHORT_CODE_RE = /^\s*(\d{2,3})\s*>\s*(\d+(?:[.,]\d+)?)\s*(UND\.?|UNIDADES?
 const TRAILING_QTY_RE = /([A-ZÀ-Úa-zà-ú][A-Za-zÀ-ÿ]*(?:\s+[A-ZÀ-Úa-zà-ú][A-Za-zÀ-ÿ]*){0,2})\s+(\d{1,3}(?:[.,]\d+)?)\s+(UNIDADES?|UND\.?|UN\.?)\b/gi;
 const LEADING_QTY_NAME_RE = /\b(\d{1,2})\s+([A-ZÀ-Ú]{3,}(?:\s+[A-ZÀ-Ú]{2,}){0,2})\s*$/gm;
 
+// piso/porcelanato/revestimento: transferido por METRO QUADRADO (nao por unidade/caixa).
+// formato: "118.979  PISO A 62X62 BOLD AC CX 4,640 MT" - codigo, nome do produto por
+// extenso (pode ter dimensoes tipo "62X62" no meio), "CX" opcional, quantidade em m2
+// sempre no FINAL da linha com "MT".
+const PISO_MT_RE = /^\s*(\d{1,3}(?:\.\d{3})+|\d{4,8})\s+.+?\s+(?:CX\s+)?(\d+(?:[.,]\d+)?)\s*MT\.?\s*$/i;
+
+function extractProductsPisoMt(text){
+  const produtos = [];
+  for (let linha of text.split('\n')){
+    linha = linha.trim();
+    if (!linha) continue;
+    const m = PISO_MT_RE.exec(linha);
+    if (m){
+      produtos.push({ codigo: normCode(m[1]), nome: null, quantidade: m[2].replace(',', '.'), unidade: 'MT2', metodo: 'piso_m2' });
+    }
+  }
+  return produtos;
+}
+
 function extractProductsFallback(text){
   let produtos = [];
   for (let linha of text.split('\n')){
@@ -271,7 +290,10 @@ function extractProducts(text){
     produtos.push({ codigo: normCode(m[1]), nome: null, quantidade: m[2].replace(',', '.'), unidade: (m[3]||'').toUpperCase() || null, metodo: 'codigo>qtd' });
     if (m[0].length === 0) re.lastIndex++;
   }
-  if (!produtos.length) return extractProductsFallback(textSemPedido);
+  if (!produtos.length){
+    const piso = extractProductsPisoMt(textSemPedido);
+    return piso.length ? piso : extractProductsFallback(textSemPedido);
+  }
   return produtos;
 }
 
