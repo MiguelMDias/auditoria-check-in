@@ -225,38 +225,39 @@ function normCode(s){ return s.split('.').join(''); }
 const PRODUCT_LINE_RE = new RegExp(
   '(?:COD|ADM|CODIGO)?\\.?:?\\s*' +
   '\\(?' +
-  '(\\d{1,3}(?:\\.\\d{3})+|\\d{4,8})' +
+  '(?<!\\d)(\\d{1,3}(?:\\.\\d{3})+|\\d{4,6})(?!\\d)' +
   '\\)?' +
   '\\s*(?:[-.>=\\/]{1,25}|QT\\.?D?\\.?|QUANT\\.?|QUANTIDADE|QDT\\.?|QUAT\\.?)?\\s*[:=]?\\s*' +
-  '\\(?' +
+  '\\(?\\s*' +
   '(\\d+(?:[.,]\\d+)?)\\s*' +
   '(UND\\.?|UN\\.?|UNID\\.?|UNIDADES?|UNI\\.?|MTS?|M2|M3|SC|KG|LT|LITROS?|PCT|CX|PE[ÇC]AS?)?' +
-  '\\)?',
+  '\\s*\\)?',
   'gi'
 );
 
 const NOISE_LINES = /^(BOM DIA|BOA TARDE|BOA NOITE|OBRIGAD[AO]|GRATO|GRATA|ATT\.?!?|ATENCIOSAMENTE|OBS\.?:?.*|OBSERVA[ÇC][AÃ]O:?.*|SOLICITO A RETIRADA.*|POR FAVOR.*)$/i;
 
-const QTY_FIRST_RE = /^\s*(\d{1,2})\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9"'\s]{2,55}?)(?:\s+(\d{1,3}(?:\.\d{3})+|\d{4,8}))?\s*$/;
-const CODE_EQ_NAME_EQ_QTY_RE = /(\d{1,3}(?:\.\d{3})+|\d{4,8})\s*=\s*([^=\n]{2,55}?)\s*=\s*(\d+(?:[.,]\d+)?)/;
+const QTY_FIRST_RE = /^\s*(\d{1,2})\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9"'\s]{2,55}?)(?:\s+(?<!\d)(\d{1,3}(?:\.\d{3})+|\d{4,6})(?!\d))?\s*$/;
+const CODE_EQ_NAME_EQ_QTY_RE = /(?<!\d)(\d{1,3}(?:\.\d{3})+|\d{4,6})(?!\d)\s*=\s*([^=\n]{2,55}?)\s*=\s*(\d+(?:[.,]\d+)?)/;
 const SHORT_CODE_RE = /^\s*(\d{2,3})\s*>\s*(\d+(?:[.,]\d+)?)\s*(UND\.?|UNIDADES?|UN\.?)?\s*$/i;
 const TRAILING_QTY_RE = /([A-ZÀ-Úa-zà-ú][A-Za-zÀ-ÿ]*(?:\s+[A-ZÀ-Úa-zà-ú][A-Za-zÀ-ÿ]*){0,2})\s+(\d{1,3}(?:[.,]\d+)?)\s+(UNIDADES?|UND\.?|UN\.?)\b/gi;
 const LEADING_QTY_NAME_RE = /\b(\d{1,2})\s+([A-ZÀ-Ú]{3,}(?:\s+[A-ZÀ-Ú]{2,}){0,2})\s*$/gm;
 
-// piso/porcelanato/revestimento: transferido por METRO QUADRADO (nao por unidade/caixa).
-// formato: "118.979  PISO A 62X62 BOLD AC CX 4,640 MT" - codigo, nome do produto por
-// extenso (pode ter dimensoes tipo "62X62" no meio), "CX" opcional, quantidade em m2
-// sempre no FINAL da linha com "MT".
-const PISO_MT_RE = /^\s*(\d{1,3}(?:\.\d{3})+|\d{4,8})\s+.+?\s+(?:CX\s+)?(\d+(?:[.,]\d+)?)\s*MT\.?\s*$/i;
+// produto com nome longo no meio: "CODIGO  NOME DO PRODUTO POR EXTENSO (pode ter
+// dimensao tipo 62X62 no meio)  [CX]  QUANTIDADE  UNIDADE" - a quantidade+unidade
+// sempre no FINAL da linha. Cobre piso/porcelanato/revestimento (M2/MT) e qualquer
+// outro produto com nome/descricao comprida antes da quantidade real (ex:
+// "136.197 TELHA RESIDENCIAL 3,66 X 1,10M 6M MULT 01 UN").
+const CODE_NOME_QTD_RE = /^\s*(?<!\d)(\d{1,3}(?:\.\d{3})+|\d{4,6})(?!\d)\s+.+?\s+(?:CX\s+)?(\d+(?:[.,]\d+)?)\s*(UND\.?|UN\.?|UNID\.?|UNIDADES?|UNI\.?|MTS?|M2|M3|SC|KG|LT|LITROS?|PCT|PE[ÇC]AS?)\.?\s*$/i;
 
-function extractProductsPisoMt(text){
+function extractProductsCodigoNomeQtd(text){
   const produtos = [];
   for (let linha of text.split('\n')){
     linha = linha.trim();
     if (!linha) continue;
-    const m = PISO_MT_RE.exec(linha);
+    const m = CODE_NOME_QTD_RE.exec(linha);
     if (m){
-      produtos.push({ codigo: normCode(m[1]), nome: null, quantidade: m[2].replace(',', '.'), unidade: 'MT2', metodo: 'piso_m2' });
+      produtos.push({ codigo: normCode(m[1]), nome: null, quantidade: m[2].replace(',', '.'), unidade: m[3].toUpperCase(), metodo: 'codigo_nome_qtd' });
     }
   }
   return produtos;
@@ -314,7 +315,7 @@ function extractProducts(text){
     if (m[0].length === 0) re.lastIndex++;
   }
   if (!produtos.length){
-    const piso = extractProductsPisoMt(textSemPedido);
+    const piso = extractProductsCodigoNomeQtd(textSemPedido);
     return piso.length ? piso : extractProductsFallback(textSemPedido);
   }
   return produtos;
