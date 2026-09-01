@@ -90,7 +90,7 @@ def main():
     }
 
     with open(args.saida, 'w', encoding='utf-8') as f:
-        f.write('const AUDIT_DATA = ')
+        f.write('let AUDIT_DATA = ')
         json.dump(out, f, ensure_ascii=False, separators=(',', ':'))
         f.write(';')
 

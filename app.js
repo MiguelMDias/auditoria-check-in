@@ -413,14 +413,116 @@ function buildReport(containerId, title, dataBlock, kind){
   renderReport();
 }
 
+const AUDIT_DATA_CACHE_KEY = 'auditoria_dados_atualizados_v1';
+function carregarDadosSalvos(){
+  try {
+    const raw = localStorage.getItem(AUDIT_DATA_CACHE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return null;
+}
+function salvarDadosAtualizados(dados){
+  try { localStorage.setItem(AUDIT_DATA_CACHE_KEY, JSON.stringify(dados)); } catch (e) {}
+}
+
+function montarDashboardCompleto(){
+  buildMeta();
+  buildTally();
+  refreshers.length = 0;
+  document.getElementById('report-transferencias').innerHTML = '';
+  document.getElementById('report-uso').innerHTML = '';
+  buildReport('report-transferencias', 'Transferências', AUDIT_DATA.transferencias, 'transf');
+  buildReport('report-uso', 'Uso e consumo', AUDIT_DATA.uso_consumo, 'uso');
+  const nTransf = AUDIT_DATA.transferencias.resultados.length + AUDIT_DATA.transferencias.orfas.length + AUDIT_DATA.transferencias.revisao_manual.length;
+  const nUso = AUDIT_DATA.uso_consumo.resultados.length + AUDIT_DATA.uso_consumo.orfas.length + AUDIT_DATA.uso_consumo.revisao_manual.length;
+  document.getElementById('toptab-n-transf').textContent = nTransf;
+  document.getElementById('toptab-n-uso').textContent = nUso;
+}
+
 function iniciarDashboard(){
   esconderLogin();
   renderUserBadge();
-  buildMeta();
-  buildTally();
-  buildReport('report-transferencias', 'Transferências', AUDIT_DATA.transferencias, 'transf');
-  buildReport('report-uso', 'Uso e consumo', AUDIT_DATA.uso_consumo, 'uso');
+
+  const salvos = carregarDadosSalvos();
+  if (salvos) AUDIT_DATA = salvos;
+
+  montarDashboardCompleto();
+
+  document.getElementById('toptabs').addEventListener('click', e => {
+    const tab = e.target.closest('.toptab');
+    if (!tab) return;
+    document.querySelectorAll('.toptab').forEach(t => t.classList.toggle('active', t === tab));
+    document.getElementById('report-transferencias').classList.toggle('active-section', tab.dataset.section === 'transferencias');
+    document.getElementById('report-uso').classList.toggle('active-section', tab.dataset.section === 'uso');
+  });
 }
+
+/* -------------------------------------------------------------------------
+   Upload / atualizacao de dados direto do navegador (le PDF + .ods e roda
+   o mesmo parser+cruzamento do gerar_auditoria.py, so' que em JS).
+------------------------------------------------------------------------- */
+function setUploadStatus(msg, tipo){
+  const el = document.getElementById('upload-status');
+  el.textContent = msg;
+  el.className = 'upload-status' + (tipo ? ' ' + tipo : '');
+}
+
+function baixarAuditData(dados){
+  const blob = new Blob(['let AUDIT_DATA = ' + JSON.stringify(dados) + ';'], { type: 'text/javascript' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'audit_data.js';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('btn-abrir-upload').addEventListener('click', () => {
+  document.getElementById('upload-overlay').classList.remove('hidden');
+});
+document.getElementById('upload-fechar').addEventListener('click', () => {
+  document.getElementById('upload-overlay').classList.add('hidden');
+});
+['upload-pdf-transf','upload-pdf-uso','upload-ods-transf','upload-ods-corr'].forEach(id => {
+  document.getElementById(id).addEventListener('change', e => {
+    const f = e.target.files[0];
+    let tag = e.target.parentElement.querySelector('.filename');
+    if (!tag){ tag = document.createElement('div'); tag.className = 'filename'; e.target.after(tag); }
+    tag.textContent = f ? `✓ ${f.name}` : '';
+  });
+});
+
+document.getElementById('upload-processar').addEventListener('click', async () => {
+  const pdfTransf = document.getElementById('upload-pdf-transf').files[0];
+  const pdfUso = document.getElementById('upload-pdf-uso').files[0];
+  const odsTransf = document.getElementById('upload-ods-transf').files[0];
+  const odsCorr = document.getElementById('upload-ods-corr').files[0];
+  if (!pdfTransf || !pdfUso || !odsTransf || !odsCorr){
+    setUploadStatus('Selecione os 4 arquivos antes de processar.', 'erro');
+    return;
+  }
+  const btn = document.getElementById('upload-processar');
+  btn.disabled = true;
+  document.getElementById('upload-download').style.display = 'none';
+  try {
+    const novosDados = await processarArquivos({ pdfTransf, pdfUso, odsTransf, odsCorr }, msg => setUploadStatus(msg));
+    AUDIT_DATA = novosDados;
+    salvarDadosAtualizados(novosDados);
+    montarDashboardCompleto();
+    setUploadStatus('Pronto! Dados atualizados e já aplicados ao dashboard. Baixe o audit_data.js pra salvar essa versão.', 'sucesso');
+    const dlBtn = document.getElementById('upload-download');
+    dlBtn.style.display = '';
+    dlBtn.onclick = () => baixarAuditData(novosDados);
+  } catch (e) {
+    setUploadStatus('Erro ao processar: ' + e.message, 'erro');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('upload-reset').addEventListener('click', () => {
+  try { localStorage.removeItem(AUDIT_DATA_CACHE_KEY); } catch (e) {}
+  location.reload();
+});
 
 document.getElementById('login-entrar').addEventListener('click', () => {
   const input = document.getElementById('login-input');
